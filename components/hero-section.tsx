@@ -2,8 +2,7 @@
 
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Star, Users } from "lucide-react"
-import { Store } from "lucide-react" // Added import for Store
+import { ArrowRight, ShoppingBag, Star, Store, Users } from "lucide-react"
 
 export function HeroSection() {
   const scrollToSection = (sectionId: string) => {
@@ -42,7 +41,16 @@ export function HeroSection() {
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-4">
+              <Button
+                onClick={() => scrollToSection("assinatura")}
+                size="lg"
+                className="bg-yellow-400 text-black hover:bg-yellow-500 rounded-xl shadow-lg font-semibold"
+              >
+                <ShoppingBag className="mr-2 h-5 w-5" />
+                Quero Assinar
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
               <Button
                 onClick={() => scrollToSection("revendedor")}
                 size="lg"

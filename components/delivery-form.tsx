@@ -1,11 +1,25 @@
-﻿"use client"
+"use client"
 
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useRef, useState, type ReactNode } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { User, Phone, CreditCard, MapPin, Home, Hash, FileText, ArrowRight, Package } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ArrowRight, Package } from "lucide-react"
+import { formatCep, formatCpf, formatPhone, onlyDigits } from "@/lib/br"
+import {
+  DELIVERY_CITY,
+  DELIVERY_DAYS,
+  DELIVERY_PERIODS,
+  DELIVERY_STATE,
+  EMPTY_DELIVERY,
+  validateDelivery,
+  type DeliveryData,
+} from "@/lib/delivery"
+
+export type { DeliveryData }
 
 interface DeliveryFormProps {
   isOpen: boolean
@@ -14,194 +28,274 @@ interface DeliveryFormProps {
   planName: string
 }
 
-export interface DeliveryData {
-  name: string
-  phone: string
-  cpf: string
-  cep: string
-  street: string
-  number: string
-  observation: string
+function normalize(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+}
+
+function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
+  return (
+    <div>
+      <Label className="text-sm font-medium mb-1 block">{label}</Label>
+      {children}
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
 }
 
 export function DeliveryForm({ isOpen, onClose, onContinue, planName }: DeliveryFormProps) {
-  const [name, setName] = useState("")
-  const [phone, setPhone] = useState("")
-  const [cpf, setCpf] = useState("")
-  const [cep, setCep] = useState("")
-  const [street, setStreet] = useState("")
-  const [number, setNumber] = useState("")
-  const [observation, setObservation] = useState("")
+  const [data, setData] = useState<DeliveryData>(EMPTY_DELIVERY)
+  const [errors, setErrors] = useState<Partial<Record<keyof DeliveryData, string>>>({})
   const [loadingCep, setLoadingCep] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [cepBlocked, setCepBlocked] = useState<string | null>(null)
+  const [cepWarning, setCepWarning] = useState<string | null>(null)
+  const lastCepLookup = useRef("")
 
-  async function handleCepBlur() {
-    const cleanCep = cep.replace(/\D/g, "")
-    if (cleanCep.length !== 8) return
+  function set<K extends keyof DeliveryData>(key: K, value: DeliveryData[K]) {
+    setData((prev) => ({ ...prev, [key]: value }))
+    setErrors((prev) => ({ ...prev, [key]: undefined }))
+  }
+
+  async function lookupCep(cepValue: string) {
+    const digits = onlyDigits(cepValue)
+    if (digits.length !== 8 || lastCepLookup.current === digits) return
+    lastCepLookup.current = digits
     setLoadingCep(true)
+    setCepBlocked(null)
+    setCepWarning(null)
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
-      const data = await res.json()
-      if (!data.erro) setStreet(data.logradouro)
-      else setErrors(prev => ({ ...prev, cep: "CEP não encontrado" }))
-    } catch {}
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const json = await res.json()
+      if (json.erro) {
+        setErrors((prev) => ({ ...prev, cep: "CEP não encontrado" }))
+      } else if (normalize(json.localidade || "") !== normalize(DELIVERY_CITY)) {
+        setCepBlocked(
+          `Esse CEP é de ${json.localidade}/${json.uf}. Entregamos apenas em ${DELIVERY_CITY}/${DELIVERY_STATE}.`
+        )
+      } else {
+        setData((prev) => ({
+          ...prev,
+          street: json.logradouro || prev.street,
+          neighborhood: json.bairro || prev.neighborhood,
+        }))
+        setErrors((prev) => ({ ...prev, cep: undefined, street: undefined, neighborhood: undefined }))
+      }
+    } catch {
+      setCepWarning("Não conseguimos buscar o endereço automaticamente. Preencha rua e bairro.")
+    }
     setLoadingCep(false)
   }
 
-  function validate() {
-    const newErrors: Record<string, string> = {}
-    if (!name) newErrors.name = "Nome obrigatório"
-    if (!phone) newErrors.phone = "Telefone obrigatório"
-    if (!cpf) newErrors.cpf = "CPF obrigatório"
-    if (!cep) newErrors.cep = "CEP obrigatório"
-    if (!street) newErrors.street = "Rua obrigatória"
-    if (!number) newErrors.number = "Número obrigatório"
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
   function handleContinue() {
-    if (!validate()) return
-    onContinue({ name, phone, cpf, cep, street, number, observation })
+    const found = validateDelivery(data)
+    setErrors(found)
+    if (Object.keys(found).length > 0 || cepBlocked) return
+    onContinue(data)
   }
 
   function handleClose() {
-    setName(""); setPhone(""); setCpf(""); setCep(""); setStreet(""); setNumber(""); setObservation(""); setErrors({})
+    setData(EMPTY_DELIVERY)
+    setErrors({})
+    setCepBlocked(null)
+    setCepWarning(null)
+    lastCepLookup.current = ""
     onClose()
   }
 
-  const filled = [name, phone, cpf, cep, street, number].filter(Boolean).length
-  const progress = Math.round((filled / 6) * 100)
+  const required: (keyof DeliveryData)[] = ["name", "phone", "email", "cpf", "cep", "street", "number", "neighborhood"]
+  const filled = required.filter((k) => data[k].trim()).length
+  const progress = Math.round((filled / required.length) * 100)
+  const err = (k: keyof DeliveryData) => (errors[k] ? "border-red-400" : "")
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto p-0">
-        
         <div className="bg-primary p-6 rounded-t-lg">
           <div className="flex items-center gap-3 mb-3">
-            <div className="bg-white/20 p-2 rounded-full">
-              <Package className="h-5 w-5 text-white" />
+            <div className="bg-black/10 p-2 rounded-full">
+              <Package className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <DialogTitle className="text-white text-lg font-bold">Dados de Entrega</DialogTitle>
-              <p className="text-white/80 text-sm">Plano {planName}</p>
+              <DialogTitle className="text-primary-foreground text-lg font-bold">Dados de Entrega</DialogTitle>
+              <DialogDescription className="text-primary-foreground/80 text-sm">Plano {planName}</DialogDescription>
             </div>
           </div>
-          <div className="w-full bg-white/20 rounded-full h-2">
-            <div className="bg-white h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+          <div className="w-full bg-black/10 rounded-full h-2">
+            <div className="bg-black h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
-          <p className="text-white/70 text-xs mt-1">{filled} de 6 campos preenchidos</p>
+          <p className="text-primary-foreground/70 text-xs mt-1">
+            {filled} de {required.length} campos obrigatórios preenchidos
+          </p>
         </div>
 
         <div className="p-6 space-y-5">
-          
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Dados Pessoais</p>
             <div className="space-y-3">
-              <div>
-                <Label htmlFor="name" className="text-sm font-medium flex items-center gap-1 mb-1">
-                  <User className="h-3 w-3" /> Nome completo *
-                </Label>
+              <Field label="Nome completo *" error={errors.name}>
                 <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); setErrors(p => ({ ...p, name: "" })) }}
-                  placeholder="Seu nome completo"
-                  className={errors.name ? "border-red-400" : ""}
+                  value={data.name}
+                  onChange={(e) => set("name", e.target.value)}
+                  placeholder="Seu nome e sobrenome"
+                  autoComplete="name"
+                  className={err("name")}
                 />
-                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="phone" className="text-sm font-medium flex items-center gap-1 mb-1">
-                    <Phone className="h-3 w-3" /> WhatsApp *
-                  </Label>
+              </Field>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="WhatsApp *" error={errors.phone}>
                   <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => { setPhone(e.target.value); setErrors(p => ({ ...p, phone: "" })) }}
+                    value={data.phone}
+                    onChange={(e) => set("phone", formatPhone(e.target.value))}
                     placeholder="(75) 99999-9999"
-                    className={errors.phone ? "border-red-400" : ""}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    className={err("phone")}
                   />
-                  {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
-                </div>
-                <div>
-                  <Label htmlFor="cpf" className="text-sm font-medium flex items-center gap-1 mb-1">
-                    <CreditCard className="h-3 w-3" /> CPF *
-                  </Label>
+                </Field>
+                <Field label="CPF *" error={errors.cpf}>
                   <Input
-                    id="cpf"
-                    value={cpf}
-                    onChange={(e) => { setCpf(e.target.value); setErrors(p => ({ ...p, cpf: "" })) }}
+                    value={data.cpf}
+                    onChange={(e) => set("cpf", formatCpf(e.target.value))}
                     placeholder="000.000.000-00"
-                    className={errors.cpf ? "border-red-400" : ""}
+                    inputMode="numeric"
+                    className={err("cpf")}
                   />
-                  {errors.cpf && <p className="text-xs text-red-500 mt-1">{errors.cpf}</p>}
-                </div>
+                </Field>
               </div>
+              <Field label="E-mail *" error={errors.email}>
+                <Input
+                  type="email"
+                  value={data.email}
+                  onChange={(e) => set("email", e.target.value)}
+                  placeholder="seu@email.com"
+                  autoComplete="email"
+                  className={err("email")}
+                />
+              </Field>
             </div>
           </div>
 
           <div className="border-t pt-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Endereço de Entrega</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Endereço de Entrega
+            </p>
             <div className="space-y-3">
-              <div>
-                <Label htmlFor="cep" className="text-sm font-medium flex items-center gap-1 mb-1">
-                  <MapPin className="h-3 w-3" /> CEP *
-                </Label>
+              <Field label="CEP *" error={errors.cep}>
                 <Input
-                  id="cep"
-                  value={cep}
-                  onChange={(e) => { setCep(e.target.value); setErrors(p => ({ ...p, cep: "" })) }}
-                  onBlur={handleCepBlur}
+                  value={data.cep}
+                  onChange={(e) => {
+                    const v = formatCep(e.target.value)
+                    set("cep", v)
+                    setCepBlocked(null)
+                    if (onlyDigits(v).length === 8) lookupCep(v)
+                    else lastCepLookup.current = ""
+                  }}
+                  onBlur={() => lookupCep(data.cep)}
                   placeholder="44000-000"
-                  className={errors.cep ? "border-red-400" : ""}
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  className={errors.cep || cepBlocked ? "border-red-400" : ""}
                 />
-                {loadingCep && <p className="text-xs text-primary mt-1 animate-pulse">🔍 Buscando endereço...</p>}
-                {errors.cep && <p className="text-xs text-red-500 mt-1">{errors.cep}</p>}
-              </div>
+                {loadingCep && <p className="text-xs text-primary mt-1 animate-pulse">Buscando endereço...</p>}
+                {cepBlocked && <p className="text-xs text-red-500 mt-1">{cepBlocked}</p>}
+                {cepWarning && <p className="text-xs text-amber-700 mt-1">{cepWarning}</p>}
+              </Field>
 
-              <div>
-                <Label htmlFor="street" className="text-sm font-medium flex items-center gap-1 mb-1">
-                  <Home className="h-3 w-3" /> Rua *
-                </Label>
+              <Field label="Rua *" error={errors.street}>
                 <Input
-                  id="street"
-                  value={street}
-                  onChange={(e) => { setStreet(e.target.value); setErrors(p => ({ ...p, street: "" })) }}
+                  value={data.street}
+                  onChange={(e) => set("street", e.target.value)}
                   placeholder="Nome da rua"
-                  className={errors.street ? "border-red-400" : ""}
+                  className={err("street")}
                 />
-                {errors.street && <p className="text-xs text-red-500 mt-1">{errors.street}</p>}
+              </Field>
+
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Número *" error={errors.number}>
+                  <Input
+                    value={data.number}
+                    onChange={(e) => set("number", e.target.value)}
+                    placeholder="123"
+                    className={err("number")}
+                  />
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Bairro *" error={errors.neighborhood}>
+                    <Input
+                      value={data.neighborhood}
+                      onChange={(e) => set("neighborhood", e.target.value)}
+                      placeholder="Seu bairro"
+                      className={err("neighborhood")}
+                    />
+                  </Field>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="number" className="text-sm font-medium flex items-center gap-1 mb-1">
-                    <Hash className="h-3 w-3" /> Número *
-                  </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Complemento">
                   <Input
-                    id="number"
-                    value={number}
-                    onChange={(e) => { setNumber(e.target.value); setErrors(p => ({ ...p, number: "" })) }}
-                    placeholder="123"
-                    className={errors.number ? "border-red-400" : ""}
+                    value={data.complement}
+                    onChange={(e) => set("complement", e.target.value)}
+                    placeholder="Apto, bloco, casa..."
                   />
-                  {errors.number && <p className="text-xs text-red-500 mt-1">{errors.number}</p>}
-                </div>
-                <div>
-                  <Label htmlFor="observation" className="text-sm font-medium flex items-center gap-1 mb-1">
-                    <FileText className="h-3 w-3" /> Complemento
-                  </Label>
+                </Field>
+                <Field label="Ponto de referência">
                   <Input
-                    id="observation"
-                    value={observation}
-                    onChange={(e) => setObservation(e.target.value)}
-                    placeholder="Apto, bloco..."
+                    value={data.reference}
+                    onChange={(e) => set("reference", e.target.value)}
+                    placeholder="Perto de..."
                   />
-                </div>
+                </Field>
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                Cidade: <strong>{DELIVERY_CITY}/{DELIVERY_STATE}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Preferências de Entrega
+            </p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Melhor dia">
+                  <Select value={data.deliveryDay} onValueChange={(v) => set("deliveryDay", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DELIVERY_DAYS.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Melhor período">
+                  <Select value={data.deliveryPeriod} onValueChange={(v) => set("deliveryPeriod", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DELIVERY_PERIODS.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <Field label="Instruções para o entregador">
+                <Textarea
+                  value={data.instructions}
+                  onChange={(e) => set("instructions", e.target.value.slice(0, 300))}
+                  placeholder="Ex.: deixar na portaria, tocar o interfone, portão azul..."
+                  rows={2}
+                />
+              </Field>
             </div>
           </div>
 
@@ -209,7 +303,10 @@ export function DeliveryForm({ isOpen, onClose, onContinue, planName }: Delivery
             <span className="text-lg">📍</span>
             <div>
               <p className="text-sm font-semibold text-amber-800">Área de entrega</p>
-              <p className="text-xs text-amber-700">Entregamos apenas em Feira de Santana, Bahia.</p>
+              <p className="text-xs text-amber-700">
+                Entregamos apenas em {DELIVERY_CITY}, Bahia. Dia e período são preferências: confirmamos com você pelo
+                WhatsApp.
+              </p>
             </div>
           </div>
 
@@ -217,7 +314,7 @@ export function DeliveryForm({ isOpen, onClose, onContinue, planName }: Delivery
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 text-base font-semibold"
             onClick={handleContinue}
           >
-            Continuar para pagamento
+            Continuar
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>

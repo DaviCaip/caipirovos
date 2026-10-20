@@ -1,14 +1,16 @@
-﻿"use client"
+"use client"
 
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getDeliveryDays } from "@/lib/plans"
 import { CheckCircle, Clock, Users, TrendingUp, Truck, History, Store, Sprout, Settings, Trash2, Pencil, X } from "lucide-react"
 
 interface Subscription {
   id: string; customer_name: string; customer_email: string; customer_phone: string; customer_cpf: string; plan_name: string; status: string; street: string; number: string; cep: string; observation: string; last_delivered_at: string | null; next_delivery_at: string | null; created_at: string
+  neighborhood?: string | null; city?: string | null; reference_point?: string | null; delivery_day?: string | null; delivery_period?: string | null; delivery_instructions?: string | null; payment_method?: string | null; coupon_code?: string | null; amount_cents?: number | null; discount_cents?: number | null
 }
 interface DeliveryHistory { id: string; subscription_id: string; delivered_at: string }
 interface Reseller { id: string; business_name: string; contact_name: string; email: string; phone: string; business_type: string; city: string; state: string; estimated_monthly_demand: number; message: string; created_at: string }
@@ -25,7 +27,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState("")
   const [authenticated, setAuthenticated] = useState(false)
   const [tab, setTab] = useState<"subscriptions" | "resellers" | "producers">("subscriptions")
-  const [filter, setFilter] = useState<"all" | "active" | "canceled">("all")
+  const [filter, setFilter] = useState<"all" | "active" | "pending" | "canceled">("all")
   const [openHistory, setOpenHistory] = useState<string | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "edit"; table: string; id: string; data?: any } | null>(null)
@@ -38,8 +40,7 @@ export default function AdminPage() {
   }
 
   function getDaysForPlan(planName: string) {
-    const plan = planName?.toLowerCase() || ""
-    return (plan.includes("raiz") || plan.includes("colheita")) ? 15 : 7
+    return getDeliveryDays(planName)
   }
 
   async function loadData() {
@@ -135,9 +136,9 @@ export default function AdminPage() {
             {tab === "subscriptions" && (
               <div className="space-y-4">
                 <div className="flex gap-2">
-                  {(["all", "active", "canceled"] as const).map(f => (
+                  {(["all", "active", "pending", "canceled"] as const).map(f => (
                     <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>
-                      {f === "all" ? "Todos" : f === "active" ? "Ativos" : "Cancelados"}
+                      {f === "all" ? "Todos" : f === "active" ? "Ativos" : f === "pending" ? "Aguardando Pix" : "Cancelados"}
                     </Button>
                   ))}
                 </div>
@@ -146,20 +147,24 @@ export default function AdminPage() {
                   const isDelivered = sub.last_delivered_at && daysLeft !== null && daysLeft > 0
                   const subHistory = history[sub.id] || []
                   return (
-                    <Card key={sub.id} className={`border-l-4 ${sub.status === "active" ? "border-l-green-500" : "border-l-red-400"}`}>
+                    <Card key={sub.id} className={`border-l-4 ${sub.status === "active" ? "border-l-green-500" : sub.status === "pending" ? "border-l-yellow-400" : "border-l-red-400"}`}>
                       <CardContent className="p-5">
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                           <div className="space-y-2 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-lg">{sub.customer_name}</h3>
-                              <Badge variant={sub.status === "active" ? "default" : "destructive"}>{sub.status === "active" ? "✅ Ativa" : "❌ Cancelada"}</Badge>
+                              <Badge variant={sub.status === "active" ? "default" : sub.status === "pending" ? "secondary" : "destructive"}>{sub.status === "active" ? "✅ Ativa" : sub.status === "pending" ? "⏳ Aguardando Pix" : "❌ Cancelada"}</Badge>
                               <Badge variant="outline">{sub.plan_name}</Badge>
                               <Badge variant="secondary">🔄 {getDaysForPlan(sub.plan_name)} dias</Badge>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm text-muted-foreground">
                               <p>📧 {sub.customer_email}</p><p>📱 {sub.customer_phone}</p>
                               <p>🪪 CPF: {sub.customer_cpf}</p>
-                              <p>📍 {sub.street}, {sub.number} — CEP {sub.cep}</p>
+                              <p>📍 {sub.street}, {sub.number}{sub.neighborhood ? ` — ${sub.neighborhood}` : ""}{sub.city ? `, ${sub.city}` : ""} — CEP {sub.cep}</p>
+                              {sub.reference_point && <p>🧭 Referência: {sub.reference_point}</p>}
+                              {(sub.delivery_day || sub.delivery_period) && <p>🗓️ Prefere: {sub.delivery_day || "—"} / {sub.delivery_period || "—"}</p>}
+                              {sub.delivery_instructions && <p>📝 {sub.delivery_instructions}</p>}
+                              {sub.payment_method && <p>💳 {sub.payment_method === "pix" ? "Pix" : "Cartão"}{sub.amount_cents ? ` — 1º pagamento R$ ${(sub.amount_cents / 100).toFixed(2).replace(".", ",")}` : ""}{sub.coupon_code ? ` (cupom ${sub.coupon_code})` : ""}</p>}
                               {sub.observation && <p>💬 {sub.observation}</p>}
                               <p>📅 Desde {new Date(sub.created_at).toLocaleDateString("pt-BR")}</p>
                             </div>
