@@ -169,3 +169,151 @@ html {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+
+/* ===== Temas de datas comemorativas (trocados em /admin > Personalizar) ===== */
+/* Remapeiam a escala 'yellow' do Tailwind e as variáveis primary/secondary. O tema normal não muda nada. */
+
+html[data-theme="natal"] {
+  --color-yellow-50: #fef2f2;
+  --color-yellow-100: #fee2e2;
+  --color-yellow-200: #fecaca;
+  --color-yellow-300: #fca5a5;
+  --color-yellow-400: #f87171;
+  --color-yellow-500: #ef4444;
+  --color-yellow-600: #dc2626;
+  --color-yellow-700: #b91c1c;
+  --primary: #f87171;
+  --accent: #f87171;
+  --ring: rgba(248,113,113,0.3);
+  --chart-1: #f87171;
+  --sidebar-primary: #f87171;
+  --sidebar-ring: rgba(248,113,113,0.3);
+  --secondary: #166534;
+  --chart-2: #166534;
+  --sidebar-accent: #166534;
+}
+
+html[data-theme="halloween"] {
+  --color-yellow-50: #fff7ed;
+  --color-yellow-100: #ffedd5;
+  --color-yellow-200: #fed7aa;
+  --color-yellow-300: #fdba74;
+  --color-yellow-400: #fb923c;
+  --color-yellow-500: #f97316;
+  --color-yellow-600: #ea580c;
+  --color-yellow-700: #c2410c;
+  --primary: #fb923c;
+  --accent: #fb923c;
+  --ring: rgba(251,146,60,0.3);
+  --chart-1: #fb923c;
+  --sidebar-primary: #fb923c;
+  --sidebar-ring: rgba(251,146,60,0.3);
+  --secondary: #6d28d9;
+  --chart-2: #6d28d9;
+  --sidebar-accent: #6d28d9;
+}
+
+html[data-theme="saojoao"] {
+  --color-yellow-50: #fffbeb;
+  --color-yellow-100: #fef3c7;
+  --color-yellow-200: #fde68a;
+  --color-yellow-300: #fcd34d;
+  --color-yellow-400: #fbbf24;
+  --color-yellow-500: #f59e0b;
+  --color-yellow-600: #d97706;
+  --color-yellow-700: #b45309;
+  --primary: #fbbf24;
+  --accent: #fbbf24;
+  --ring: rgba(251,191,36,0.3);
+  --chart-1: #fbbf24;
+  --sidebar-primary: #fbbf24;
+  --sidebar-ring: rgba(251,191,36,0.3);
+  --secondary: #dc2626;
+  --chart-2: #dc2626;
+  --sidebar-accent: #dc2626;
+}
+
+html[data-theme="pascoa"] {
+  --color-yellow-50: #faf5ff;
+  --color-yellow-100: #f3e8ff;
+  --color-yellow-200: #e9d5ff;
+  --color-yellow-300: #d8b4fe;
+  --color-yellow-400: #c084fc;
+  --color-yellow-500: #a855f7;
+  --color-yellow-600: #9333ea;
+  --color-yellow-700: #7e22ce;
+  --primary: #c084fc;
+  --accent: #c084fc;
+  --ring: rgba(192,132,252,0.3);
+  --chart-1: #c084fc;
+  --sidebar-primary: #c084fc;
+  --sidebar-ring: rgba(192,132,252,0.3);
+  --secondary: #db2777;
+  --chart-2: #db2777;
+  --sidebar-accent: #db2777;
+}
+
+html[data-theme="maes"] {
+  --color-yellow-50: #fff1f2;
+  --color-yellow-100: #ffe4e6;
+  --color-yellow-200: #fecdd3;
+  --color-yellow-300: #fda4af;
+  --color-yellow-400: #fb7185;
+  --color-yellow-500: #f43f5e;
+  --color-yellow-600: #e11d48;
+  --color-yellow-700: #be123c;
+  --primary: #fb7185;
+  --accent: #fb7185;
+  --ring: rgba(251,113,133,0.3);
+  --chart-1: #fb7185;
+  --sidebar-primary: #fb7185;
+  --sidebar-ring: rgba(251,113,133,0.3);
+  --secondary: #be185d;
+  --chart-2: #be185d;
+  --sidebar-accent: #be185d;
+}
+
+html[data-theme="pais"] {
+  --color-yellow-50: #eff6ff;
+  --color-yellow-100: #dbeafe;
+  --color-yellow-200: #bfdbfe;
+  --color-yellow-300: #93c5fd;
+  --color-yellow-400: #60a5fa;
+  --color-yellow-500: #3b82f6;
+  --color-yellow-600: #2563eb;
+  --color-yellow-700: #1d4ed8;
+  --primary: #60a5fa;
+  --accent: #60a5fa;
+  --ring: rgba(96,165,250,0.3);
+  --chart-1: #60a5fa;
+  --sidebar-primary: #60a5fa;
+  --sidebar-ring: rgba(96,165,250,0.3);
+  --secondary: #1e3a8a;
+  --chart-2: #1e3a8a;
+  --sidebar-accent: #1e3a8a;
+}
+
+/* Enfeites que caem devagar (não atrapalham cliques) */
+.theme-decor {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 40;
+}
+.theme-decor span {
+  position: absolute;
+  top: -3rem;
+  opacity: 0.85;
+  animation-name: theme-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes theme-fall {
+  0% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(110vh) rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-decor { display: none; }
+}

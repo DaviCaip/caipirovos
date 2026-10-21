@@ -10,6 +10,7 @@ export interface CouponRow {
   active: boolean
   max_uses: number | null
   used_count: number
+  starts_at: string | null
   expires_at: string | null
   allowed_plans: string[] | null
 }
@@ -35,6 +36,7 @@ export async function resolveCoupon(code: unknown, plan: Plan): Promise<CouponRe
 
   const c = data as CouponRow
   if (!c.active) return invalid
+  if (c.starts_at && new Date(c.starts_at).getTime() > Date.now()) return { ok: false, error: "Este cupom ainda não está valendo." }
   if (c.expires_at && new Date(c.expires_at).getTime() < Date.now()) return invalid
   if (c.max_uses !== null && c.used_count >= c.max_uses) return { ok: false, error: "Este cupom já atingiu o limite de usos." }
   if (c.allowed_plans && c.allowed_plans.length > 0) {
