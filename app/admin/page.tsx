@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react"
 
-type Permission = "subscriptions" | "registrations" | "coupons" | "theme"
+type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme"
 type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme"
 
 interface Subscription {
@@ -84,6 +84,15 @@ interface Producer {
   message: string
   created_at: string
 }
+
+// Cores dos status: verde = ativo, laranja = aguardando Pix, vermelho = não ativo
+function statusInfo(status: string) {
+  if (status === "active") return { label: "✅ Ativo", badge: "bg-green-100 text-green-800", border: "border-l-green-500" }
+  if (status === "pending") return { label: "⏳ Aguardando Pix", badge: "bg-orange-100 text-orange-800", border: "border-l-orange-500" }
+  return { label: "❌ Não ativo", badge: "bg-red-100 text-red-800", border: "border-l-red-500" }
+}
+
+const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
 
 class ApiError extends Error {
   status: number
@@ -234,7 +243,12 @@ export default function AdminPage() {
   async function handleConfirmAction() {
     if (!confirmAction) return
     try {
-      if (confirmAction.type === "delete") {
+      if (confirmAction.type === "delete" && confirmAction.table === "subscriptions") {
+        await api("/api/admin/subscriptions", {
+          method: "DELETE",
+          body: JSON.stringify({ id: confirmAction.id, confirmPassword }),
+        })
+      } else if (confirmAction.type === "delete") {
         await api("/api/admin/registrations", {
           method: "DELETE",
           body: JSON.stringify({ table: confirmAction.table, id: confirmAction.id, confirmPassword }),
@@ -254,8 +268,17 @@ export default function AdminPage() {
     }
   }
 
-  const filtered = subscriptions.filter((s) => (filter === "all" ? true : s.status === filter))
+  const isInactive = (s: Subscription) => s.status !== "active" && s.status !== "pending"
+  const filtered = subscriptions.filter((s) =>
+    filter === "all" ? true : filter === "canceled" ? isInactive(s) : s.status === filter
+  )
   const active = subscriptions.filter((s) => s.status === "active").length
+  const counts = {
+    all: subscriptions.length,
+    active,
+    pending: subscriptions.filter((s) => s.status === "pending").length,
+    canceled: subscriptions.filter(isInactive).length,
+  }
 
   if (checking) {
     return <div className="min-h-screen bg-muted/30 flex items-center justify-center text-muted-foreground">Carregando...</div>
@@ -400,7 +423,7 @@ export default function AdminPage() {
                   <div className="flex gap-2 flex-wrap">
                     {(["all", "active", "pending", "canceled"] as const).map((f) => (
                       <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>
-                        {f === "all" ? "Todos" : f === "active" ? "Ativos" : f === "pending" ? "Aguardando Pix" : "Cancelados"}
+                        {f === "all" ? "Todos" : f === "active" ? "Ativos" : f === "pending" ? "Aguardando Pix" : "Não ativos"} ({counts[f]})
                       </Button>
                     ))}
                   </div>
@@ -416,25 +439,23 @@ export default function AdminPage() {
                       return (
                         <Card
                           key={sub.id}
-                          className={`border-l-4 ${
-                            sub.status === "active" ? "border-l-green-500" : sub.status === "pending" ? "border-l-yellow-400" : "border-l-red-400"
-                          }`}
+                          className={`border-l-4 ${statusInfo(sub.status).border}`}
                         >
                           <CardContent className="p-5">
                             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                               <div className="space-y-2 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <h3 className="font-semibold text-lg">{sub.customer_name}</h3>
-                                  <Badge variant={sub.status === "active" ? "default" : sub.status === "pending" ? "secondary" : "destructive"}>
-                                    {sub.status === "active" ? "✅ Ativa" : sub.status === "pending" ? "⏳ Aguardando Pix" : "❌ Cancelada"}
-                                  </Badge>
+                                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusInfo(sub.status).badge}`}>
+                                    {statusInfo(sub.status).label}
+                                  </span>
                                   <Badge variant="outline">{sub.plan_name}</Badge>
                                   <Badge variant="secondary">🔄 {getDeliveryDays(sub.plan_name)} dias</Badge>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm text-muted-foreground">
                                   <p>📧 {sub.customer_email}</p>
                                   <p>📱 {sub.customer_phone}</p>
-                                  <p>🪪 CPF: {sub.customer_cpf}</p>
+                                  <p>CPF: {sub.customer_cpf}</p>
                                   <p>
                                     📍 {sub.street}, {sub.number}
                                     {sub.neighborhood ? ` — ${sub.neighborhood}` : ""}
@@ -495,6 +516,26 @@ export default function AdminPage() {
                                   </div>
                                 )}
                               </div>
+                              {sub.status !== "active" && can("delete_subscriptions") && (
+                                <div className="flex flex-col gap-2 min-w-[160px]">
+                                  <p className="text-xs text-muted-foreground">
+                                    {sub.status === "pending" ? "Pix pendente" : "Não ativa"} há {daysSince(sub.created_at)} dia
+                                    {daysSince(sub.created_at) !== 1 ? "s" : ""}
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-red-600 border-red-200 hover:bg-red-50"
+                                    disabled={sub.status === "pending" && daysSince(sub.created_at) < 2}
+                                    onClick={() => openAction("delete", "subscriptions", sub.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-1" /> Excluir assinatura
+                                  </Button>
+                                  {sub.status === "pending" && daysSince(sub.created_at) < 2 && (
+                                    <p className="text-xs text-muted-foreground">O Pix ainda pode ser pago. Dá para excluir depois de 2 dias.</p>
+                                  )}
+                                </div>
+                              )}
                               {sub.status === "active" && (
                                 <div className="flex flex-col gap-2 min-w-[160px]">
                                   {!isDelivered ? (
@@ -679,7 +720,13 @@ export default function AdminPage() {
               </div>
             )}
 
-            {confirmAction.type === "delete" && <p className="text-sm text-muted-foreground">Tem certeza? Esta ação não pode ser desfeita.</p>}
+            {confirmAction.type === "delete" && (
+              <p className="text-sm text-muted-foreground">
+                {confirmAction.table === "subscriptions"
+                  ? "Isso apaga a assinatura e o histórico de entregas dela. Esta ação não pode ser desfeita."
+                  : "Tem certeza? Esta ação não pode ser desfeita."}
+              </p>
+            )}
 
             <div>
               <label className="text-xs text-muted-foreground">Digite a sua senha para confirmar</label>

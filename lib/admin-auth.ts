@@ -7,12 +7,12 @@ import { NextRequest, NextResponse } from "next/server"
 //   {"name":"Davi","password":"...","permissions":["*"]},
 //   {"name":"Entregas","password":"...","permissions":["subscriptions"]}
 // ]
-// "*" = tudo. Áreas: subscriptions, registrations, coupons, theme.
+// "*" = tudo. Áreas: subscriptions, delete_subscriptions (excluir assinaturas), registrations, coupons, theme.
 //
 // ADMIN_SESSION_SECRET = texto aleatório com 32+ caracteres (assina o cookie de login).
 
-export type Permission = "subscriptions" | "registrations" | "coupons" | "theme"
-export const ALL_PERMISSIONS: Permission[] = ["subscriptions", "registrations", "coupons", "theme"]
+export type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme"
+export const ALL_PERMISSIONS: Permission[] = ["subscriptions", "delete_subscriptions", "registrations", "coupons", "theme"]
 
 export const COOKIE_NAME = "cv_admin"
 export const SESSION_HOURS = 12

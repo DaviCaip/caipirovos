@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/admin-auth"
+import { requireAdmin, verifyUserPassword } from "@/lib/admin-auth"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getDeliveryDays } from "@/lib/plans"
 
@@ -54,4 +54,41 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: "Ação inválida." }, { status: 400 })
+}
+
+// Só quem tem "delete_subscriptions" (a conta "*" tem) pode excluir. Assinatura ATIVA nunca é excluída:
+// primeiro ela precisa estar cancelada. Pix pendente só pode ser excluído depois de 2 dias (o Pix ainda pode ser pago).
+const PENDING_MIN_DAYS = 2
+
+export async function DELETE(req: NextRequest) {
+  const auth = requireAdmin(req, "delete_subscriptions")
+  if ("error" in auth) return auth.error
+
+  const { id, confirmPassword } = await req.json().catch(() => ({}))
+  if (typeof id !== "string" || !id) return NextResponse.json({ error: "Assinatura inválida." }, { status: 400 })
+  if (!verifyUserPassword(auth.user.name, confirmPassword)) {
+    return NextResponse.json({ error: "Senha de confirmação incorreta." }, { status: 403 })
+  }
+
+  const supabase = createAdminClient()
+  const { data: sub } = await supabase.from("subscriptions").select("status, created_at").eq("id", id).maybeSingle()
+  if (!sub) return NextResponse.json({ error: "Assinatura não encontrada." }, { status: 404 })
+
+  if (sub.status === "active") {
+    return NextResponse.json({ error: "Esta assinatura está ativa. Só dá para excluir assinaturas não ativas." }, { status: 400 })
+  }
+  if (sub.status === "pending") {
+    const ageDays = (Date.now() - new Date(sub.created_at).getTime()) / 86400000
+    if (ageDays < PENDING_MIN_DAYS) {
+      return NextResponse.json(
+        { error: `Este Pix ainda pode ser pago. Espere ${PENDING_MIN_DAYS} dias para poder excluir.` },
+        { status: 400 }
+      )
+    }
+  }
+
+  await supabase.from("delivery_history").delete().eq("subscription_id", id)
+  const { error } = await supabase.from("subscriptions").delete().eq("id", id)
+  if (error) return NextResponse.json({ error: "Não foi possível excluir." }, { status: 500 })
+  return NextResponse.json({ ok: true })
 }
