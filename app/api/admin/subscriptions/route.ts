@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getDeliveryDays } from "@/lib/plans"
 
 export async function GET(req: NextRequest) {
-  const auth = requireAdmin(req, "subscriptions")
+  const auth = await requireAdmin(req, "subscriptions")
   if ("error" in auth) return auth.error
 
   const supabase = createAdminClient()
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAdmin(req, "subscriptions")
+  const auth = await requireAdmin(req, "subscriptions")
   if ("error" in auth) return auth.error
 
   const { action, id } = await req.json().catch(() => ({}))
@@ -61,12 +61,12 @@ export async function POST(req: NextRequest) {
 const PENDING_MIN_DAYS = 2
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAdmin(req, "delete_subscriptions")
+  const auth = await requireAdmin(req, "delete_subscriptions")
   if ("error" in auth) return auth.error
 
   const { id, confirmPassword } = await req.json().catch(() => ({}))
   if (typeof id !== "string" || !id) return NextResponse.json({ error: "Assinatura inválida." }, { status: 400 })
-  if (!verifyUserPassword(auth.user.name, confirmPassword)) {
+  if (!(await verifyUserPassword(auth.user, confirmPassword))) {
     return NextResponse.json({ error: "Senha de confirmação incorreta." }, { status: 403 })
   }
 

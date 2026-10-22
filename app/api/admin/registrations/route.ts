@@ -9,7 +9,7 @@ const EDITABLE: Record<string, string[]> = {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = requireAdmin(req, "registrations")
+  const auth = await requireAdmin(req, "registrations")
   if ("error" in auth) return auth.error
 
   const supabase = createAdminClient()
@@ -19,12 +19,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = requireAdmin(req, "registrations")
+  const auth = await requireAdmin(req, "registrations")
   if ("error" in auth) return auth.error
 
   const { table, id, data, confirmPassword } = await req.json().catch(() => ({}))
   if (!EDITABLE[table] || typeof id !== "string") return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
-  if (!verifyUserPassword(auth.user.name, confirmPassword)) {
+  if (!(await verifyUserPassword(auth.user, confirmPassword))) {
     return NextResponse.json({ error: "Senha de confirmação incorreta." }, { status: 403 })
   }
 
@@ -40,12 +40,12 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAdmin(req, "registrations")
+  const auth = await requireAdmin(req, "registrations")
   if ("error" in auth) return auth.error
 
   const { table, id, confirmPassword } = await req.json().catch(() => ({}))
   if (!EDITABLE[table] || typeof id !== "string") return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
-  if (!verifyUserPassword(auth.user.name, confirmPassword)) {
+  if (!(await verifyUserPassword(auth.user, confirmPassword))) {
     return NextResponse.json({ error: "Senha de confirmação incorreta." }, { status: 403 })
   }
 

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (payment.status === "approved") {
       const { data, error } = await supabase
         .from("subscriptions")
-        .update({ status: "active" })
+        .update({ status: "active", paid_at: new Date().toISOString() })
         .eq("payment_id", String(id))
         .eq("status", "pending")
         .select("coupon_code")

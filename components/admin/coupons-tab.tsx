@@ -19,6 +19,7 @@ interface Coupon {
   starts_at: string | null
   expires_at: string | null
   allowed_plans: string[] | null
+  influencer_id: string | null
 }
 
 type Api = (path: string, init?: RequestInit) => Promise<any>
@@ -48,6 +49,9 @@ function describe(c: Coupon) {
 
 export function CouponsTab({ api }: { api: Api }) {
   const [coupons, setCoupons] = useState<Coupon[]>([])
+  const [influencers, setInfluencers] = useState<{ id: string; name: string }[]>([])
+  const [canAssign, setCanAssign] = useState(false)
+  const [influencerId, setInfluencerId] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -71,6 +75,8 @@ export function CouponsTab({ api }: { api: Api }) {
     try {
       const json = await api("/api/admin/coupons")
       setCoupons(json.coupons)
+      setInfluencers(json.influencers || [])
+      setCanAssign(!!json.canAssign)
       setError(null)
     } catch (e: any) {
       setError(e.message)
@@ -99,6 +105,7 @@ export function CouponsTab({ api }: { api: Api }) {
           maxUses,
           allowedPlans: plans,
           duration,
+          influencerId: canAssign ? influencerId : undefined,
         }),
       })
       setMessage(`Cupom ${code.trim().toUpperCase()} criado!`)
@@ -108,6 +115,7 @@ export function CouponsTab({ api }: { api: Api }) {
       setNoEndDate(false)
       setMaxUses("")
       setPlans([])
+      setInfluencerId("")
       load()
     } catch (e: any) {
       setError(e.message)
@@ -248,6 +256,21 @@ export function CouponsTab({ api }: { api: Api }) {
             <p className="text-xs text-muted-foreground mt-1">No Pix o desconto vale sempre no 1º pagamento.</p>
           </div>
 
+          {canAssign && (
+            <div>
+              <label className="text-xs text-muted-foreground">Cupom de um influencer? (opcional)</label>
+              <select className={input} value={influencerId} onChange={(e) => setInfluencerId(e.target.value)}>
+                <option value="">Cupom comum, sem influencer</option>
+                {influencers.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    🌟 {i.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">O influencer acompanha em quantas compras o cupom foi usado.</p>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
           {message && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">{message}</p>}
 
@@ -287,6 +310,7 @@ export function CouponsTab({ api }: { api: Api }) {
                       🔢 Usado {c.used_count}x{c.max_uses !== null ? ` de ${c.max_uses}` : " (sem limite)"}
                     </p>
                     <p>📦 {c.allowed_plans && c.allowed_plans.length > 0 ? c.allowed_plans.join(", ") : "Todos os planos"}</p>
+                    {c.influencer_id && <p>🌟 Influencer: {influencers.find((i) => i.id === c.influencer_id)?.name || "—"}</p>}
                   </div>
                   {neverEnds && (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
@@ -301,6 +325,21 @@ export function CouponsTab({ api }: { api: Api }) {
                     <Button size="sm" variant="outline" onClick={() => setExtend({ id: c.id, date: "" })}>
                       Mudar data final
                     </Button>
+                    {canAssign && (
+                      <select
+                        className="border rounded-md px-2 py-1 text-sm"
+                        value={c.influencer_id || ""}
+                        onChange={(e) => patch({ id: c.id, influencerId: e.target.value || null })}
+                        aria-label="Influencer do cupom"
+                      >
+                        <option value="">Sem influencer</option>
+                        {influencers.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            🌟 {i.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

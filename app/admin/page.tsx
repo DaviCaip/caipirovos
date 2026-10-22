@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CouponsTab } from "@/components/admin/coupons-tab"
 import { ThemeTab } from "@/components/admin/theme-tab"
+import { InfluencersTab } from "@/components/admin/influencers-tab"
+import { MyStatsTab } from "@/components/admin/my-stats-tab"
 import { getDeliveryDays } from "@/lib/plans"
 import {
   CheckCircle,
@@ -15,7 +17,9 @@ import {
   Palette,
   Pencil,
   Settings,
+  Sparkles,
   Sprout,
+  Star,
   Store,
   Tag,
   Trash2,
@@ -25,8 +29,8 @@ import {
   X,
 } from "lucide-react"
 
-type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme"
-type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme"
+type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme" | "influencers" | "my_stats"
+type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme" | "influencers" | "mystats"
 
 interface Subscription {
   id: string
@@ -176,15 +180,17 @@ export default function AdminPage() {
   useEffect(() => {
     if (!user) return
     // abre na primeira aba que a senha libera
-    const first: Tab | undefined = user.permissions.includes("subscriptions")
-      ? "subscriptions"
-      : user.permissions.includes("registrations")
-        ? "resellers"
-        : user.permissions.includes("coupons")
-          ? "coupons"
-          : user.permissions.includes("theme")
-            ? "theme"
-            : undefined
+    const first: Tab | undefined = user.permissions.includes("my_stats") && !user.permissions.includes("influencers")
+      ? "mystats"
+      : user.permissions.includes("subscriptions")
+        ? "subscriptions"
+        : user.permissions.includes("registrations")
+          ? "resellers"
+          : user.permissions.includes("coupons")
+            ? "coupons"
+            : user.permissions.includes("theme")
+              ? "theme"
+              : undefined
     if (first) setTab(first)
     loadData()
   }, [user, loadData])
@@ -314,11 +320,13 @@ export default function AdminPage() {
   }
 
   const tabs: { id: Tab; label: string; icon: any; show: boolean }[] = [
+    { id: "mystats", label: "Meu painel", icon: Sparkles, show: can("my_stats") && !can("influencers") },
     { id: "subscriptions", label: "Assinaturas", icon: Users, show: can("subscriptions") },
     { id: "resellers", label: "Revendedores", icon: Store, show: can("registrations") },
     { id: "producers", label: "Produtores", icon: Sprout, show: can("registrations") },
     { id: "coupons", label: "Cupons", icon: Tag, show: can("coupons") },
     { id: "theme", label: "Personalizar", icon: Palette, show: can("theme") },
+    { id: "influencers", label: "Influencers", icon: Star, show: can("influencers") },
   ]
 
   return (
@@ -412,6 +420,8 @@ export default function AdminPage() {
 
         {tab === "coupons" && can("coupons") && <CouponsTab api={api} />}
         {tab === "theme" && can("theme") && <ThemeTab api={api} />}
+        {tab === "influencers" && can("influencers") && <InfluencersTab api={api} />}
+        {tab === "mystats" && can("my_stats") && !can("influencers") && <MyStatsTab api={api} />}
 
         {(tab === "subscriptions" || tab === "resellers" || tab === "producers") &&
           (loading ? (

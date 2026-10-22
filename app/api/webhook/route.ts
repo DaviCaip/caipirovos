@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
         coupon_code: m.couponCode || null,
         discount_cents: Number(m.discountCents || 0),
         amount_cents: Number(m.amountCents || 0),
+        ...(existing ? {} : { paid_at: new Date().toISOString() }),
       },
       { onConflict: "stripe_subscription_id" }
     )

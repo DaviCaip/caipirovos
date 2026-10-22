@@ -29,14 +29,14 @@ export async function POST(req: NextRequest) {
     password = typeof body?.password === "string" ? body.password : ""
   } catch {}
 
-  const user = password ? findUserByPassword(password) : undefined
+  const user = password ? await findUserByPassword(password) : null
   if (!user) {
     registerFailure(ip)
     await new Promise((r) => setTimeout(r, 600))
     return NextResponse.json({ error: "Senha incorreta." }, { status: 401 })
   }
 
-  const token = createSessionToken(user.name)
+  const token = createSessionToken(user)
   if (!token) return NextResponse.json({ error: "Falha ao criar a sessão." }, { status: 500 })
 
   clearFailures(ip)

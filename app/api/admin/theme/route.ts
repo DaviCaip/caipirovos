@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { isThemeId } from "@/lib/themes"
 
 export async function GET(req: NextRequest) {
-  const auth = requireAdmin(req, "theme")
+  const auth = await requireAdmin(req, "theme")
   if ("error" in auth) return auth.error
 
   const { data } = await createAdminClient().from("site_settings").select("value").eq("key", "theme").maybeSingle()
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAdmin(req, "theme")
+  const auth = await requireAdmin(req, "theme")
   if ("error" in auth) return auth.error
 
   const { theme, message } = await req.json().catch(() => ({}))

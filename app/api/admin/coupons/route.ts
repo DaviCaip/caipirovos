@@ -11,15 +11,21 @@ const startOfDay = (d: string) => `${d}T00:00:00-03:00`
 const endOfDay = (d: string) => `${d}T23:59:59-03:00`
 
 export async function GET(req: NextRequest) {
-  const auth = requireAdmin(req, "coupons")
+  const auth = await requireAdmin(req, "coupons")
   if ("error" in auth) return auth.error
-  const { data, error } = await createAdminClient().from("coupons").select("*").order("created_at", { ascending: false })
+  const supabase = createAdminClient()
+  const { data, error } = await supabase.from("coupons").select("*").order("created_at", { ascending: false })
   if (error) return NextResponse.json({ error: "Não foi possível carregar os cupons." }, { status: 500 })
-  return NextResponse.json({ coupons: data || [] })
+  const { data: accounts } = await supabase.from("admin_accounts").select("id, name").order("name")
+  return NextResponse.json({
+    coupons: data || [],
+    influencers: accounts || [],
+    canAssign: auth.user.permissions.includes("influencers"),
+  })
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAdmin(req, "coupons")
+  const auth = await requireAdmin(req, "coupons")
   if ("error" in auth) return auth.error
 
   const b = await req.json().catch(() => ({}))
@@ -60,9 +66,21 @@ export async function POST(req: NextRequest) {
   const planNames = PLANS.map((p) => p.name)
   const allowed: string[] = Array.isArray(b.allowedPlans) ? b.allowedPlans.filter((p: any) => planNames.includes(p)) : []
 
+  // Só quem gerencia influencers pode associar o cupom a uma conta.
+  let influencerId: string | null = null
+  if (typeof b.influencerId === "string" && b.influencerId) {
+    if (!auth.user.permissions.includes("influencers")) {
+      return NextResponse.json({ error: "Sua senha não pode associar cupons a influencers." }, { status: 403 })
+    }
+    const { data: acc } = await createAdminClient().from("admin_accounts").select("id").eq("id", b.influencerId).maybeSingle()
+    if (!acc) return NextResponse.json({ error: "Influencer não encontrado." }, { status: 400 })
+    influencerId = acc.id
+  }
+
   const { error } = await createAdminClient()
     .from("coupons")
     .insert({
+      influencer_id: influencerId,
       code,
       description: typeof b.description === "string" ? b.description.trim().slice(0, 120) || null : null,
       discount_type: type,
@@ -83,7 +101,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = requireAdmin(req, "coupons")
+  const auth = await requireAdmin(req, "coupons")
   if ("error" in auth) return auth.error
 
   const b = await req.json().catch(() => ({}))
@@ -96,6 +114,12 @@ export async function PATCH(req: NextRequest) {
     else if (typeof b.endDate === "string" && DATE_RE.test(b.endDate)) update.expires_at = endOfDay(b.endDate)
     else return NextResponse.json({ error: "Data final inválida." }, { status: 400 })
   }
+  if (b.influencerId !== undefined) {
+    if (!auth.user.permissions.includes("influencers")) {
+      return NextResponse.json({ error: "Sua senha não pode associar cupons a influencers." }, { status: 403 })
+    }
+    update.influencer_id = typeof b.influencerId === "string" && b.influencerId ? b.influencerId : null
+  }
   if (Object.keys(update).length === 0) return NextResponse.json({ error: "Nada para alterar." }, { status: 400 })
 
   const { error } = await createAdminClient().from("coupons").update(update).eq("id", b.id)
@@ -104,12 +128,12 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAdmin(req, "coupons")
+  const auth = await requireAdmin(req, "coupons")
   if ("error" in auth) return auth.error
 
   const { id, confirmPassword } = await req.json().catch(() => ({}))
   if (typeof id !== "string") return NextResponse.json({ error: "Cupom inválido." }, { status: 400 })
-  if (!verifyUserPassword(auth.user.name, confirmPassword)) {
+  if (!(await verifyUserPassword(auth.user, confirmPassword))) {
     return NextResponse.json({ error: "Senha de confirmação incorreta." }, { status: 403 })
   }
   const { error } = await createAdminClient().from("coupons").delete().eq("id", id)
