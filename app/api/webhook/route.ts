@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import Stripe from "stripe"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { DELIVERY_CITY, DELIVERY_STATE } from "@/lib/delivery"
+import { getCashbackSettings, grantCardCashback } from "@/lib/cashback"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
@@ -67,6 +68,34 @@ export async function POST(req: NextRequest) {
 
     if (!existing && m.couponCode) {
       await supabase.rpc("increment_coupon_use", { p_code: m.couponCode })
+    }
+  }
+
+  // Cashback no cartão: a cada fatura paga, o cliente ganha crédito que o Stripe desconta da próxima fatura.
+  // (Precisa do evento "invoice.paid" ligado no webhook do Stripe. Sem ele, nada acontece.)
+  if (event.type === "invoice.paid") {
+    const invoice = event.data.object as Stripe.Invoice
+    const customer = invoice.customer
+    const sub = invoice.parent?.subscription_details?.subscription
+    try {
+      const settings = await getCashbackSettings(supabase)
+      await grantCardCashback({
+        supabase,
+        stripe,
+        settings,
+        invoice: {
+          invoiceId: invoice.id as string,
+          invoiceNumber: invoice.number,
+          amountPaidCents: invoice.amount_paid,
+          stripeCustomerId: typeof customer === "string" ? customer : (customer?.id ?? null),
+          stripeSubscriptionId: typeof sub === "string" ? sub : (sub?.id ?? null),
+          email: invoice.customer_email,
+          name: invoice.customer_name,
+        },
+      })
+    } catch (err: any) {
+      console.error("Webhook Stripe: falha no cashback:", err?.message || err)
+      return NextResponse.json({ error: "Falha no cashback" }, { status: 500 })
     }
   }
 

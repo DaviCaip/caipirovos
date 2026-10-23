@@ -10,6 +10,7 @@ type Api = (path: string, init?: RequestInit) => Promise<any>
 interface Account {
   id: string
   name: string
+  role: "influencer" | "team"
   active: boolean
   permissions: string[]
   monthly_goal: number
@@ -57,6 +58,7 @@ interface FormValues {
 
 function AccountForm({
   initial,
+  role,
   coupons,
   editingId,
   saving,
@@ -65,6 +67,7 @@ function AccountForm({
   onCancel,
 }: {
   initial: FormValues
+  role: "influencer" | "team"
   coupons: CouponRef[]
   editingId: string | null
   saving: boolean
@@ -80,10 +83,10 @@ function AccountForm({
 
   return (
     <div className="space-y-4">
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className={`grid gap-3 ${role === "team" ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
         <div>
-          <label className="text-xs text-muted-foreground">Nome do influencer</label>
-          <input className={input} value={v.name} maxLength={60} placeholder="Ex.: Maria Fit" onChange={(e) => setV({ ...v, name: e.target.value })} />
+          <label className="text-xs text-muted-foreground">{role === "team" ? "Nome do acesso" : "Nome do influencer"}</label>
+          <input className={input} value={v.name} maxLength={60} placeholder={role === "team" ? "Ex.: Equipe" : "Ex.: Maria Fit"} onChange={(e) => setV({ ...v, name: e.target.value })} />
         </div>
         <div>
           <label className="text-xs text-muted-foreground">{editingId ? "Nova senha (deixe vazio para manter)" : "Senha de acesso"}</label>
@@ -94,15 +97,19 @@ function AccountForm({
             </Button>
           </div>
         </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Meta de compras por mês</label>
-          <input className={input} type="number" min={0} value={v.monthlyGoal} onChange={(e) => setV({ ...v, monthlyGoal: e.target.value })} />
-        </div>
+        {role === "influencer" && (
+          <div>
+            <label className="text-xs text-muted-foreground">Meta de compras por mês</label>
+            <input className={input} type="number" min={0} value={v.monthlyGoal} onChange={(e) => setV({ ...v, monthlyGoal: e.target.value })} />
+          </div>
+        )}
       </div>
 
       <div>
         <p className="text-xs text-muted-foreground mb-1">
-          O painel de resultados do cupom já vem liberado. Marque só o que mais essa pessoa pode ver (o resto nem aparece para ela):
+          {role === "influencer"
+            ? "O painel de resultados do cupom já vem liberado. Marque só o que mais essa pessoa pode ver (o resto nem aparece para ela):"
+            : "Marque o que essa senha pode ver (o resto nem aparece para quem entrar):"}
         </p>
         <div className="grid md:grid-cols-2 gap-2">
           {AREAS.map((a) => (
@@ -117,6 +124,7 @@ function AccountForm({
         </div>
       </div>
 
+      {role === "influencer" && (
       <div>
         <p className="text-xs text-muted-foreground mb-1">Cupons desta pessoa (só aparecem os que ainda não são de outro influencer):</p>
         {selectable.length === 0 ? (
@@ -140,11 +148,15 @@ function AccountForm({
           </div>
         )}
       </div>
+      )}
 
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
 
       <div className="flex gap-2">
-        <Button onClick={() => onSave(v)} disabled={saving || !v.name.trim() || (!editingId && v.password.length < 6)}>
+        <Button
+          onClick={() => onSave(v)}
+          disabled={saving || !v.name.trim() || (!editingId && v.password.length < 6) || (role === "team" && v.permissions.length === 0)}
+        >
           {saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar conta"}
         </Button>
         <Button variant="ghost" onClick={onCancel}>
@@ -163,6 +175,7 @@ export function InfluencersTab({ api }: { api: Api }) {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState<"list" | "new" | { edit: string } | { preview: Account }>("list")
+  const [newRole, setNewRole] = useState<"influencer" | "team">("team")
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null)
@@ -195,6 +208,7 @@ export function InfluencersTab({ api }: { api: Api }) {
         permissions: v.permissions,
         couponCodes: v.couponCodes,
       }
+      if (!editingId) body.role = newRole
       if (v.password) body.password = v.password
       if (editingId) {
         await api("/api/admin/influencers", { method: "PATCH", body: JSON.stringify({ id: editingId, ...body }) })
@@ -261,8 +275,8 @@ export function InfluencersTab({ api }: { api: Api }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="font-semibold text-lg">🌟 Influencers</h2>
-        {mode === "list" && <Button onClick={() => { setMode("new"); setFormError(null) }}>➕ Novo influencer</Button>}
+        <h2 className="font-semibold text-lg">🔑 Acessos</h2>
+        {mode === "list" && <Button onClick={() => { setMode("new"); setFormError(null) }}>➕ Novo acesso</Button>}
       </div>
 
       {created && (
@@ -290,8 +304,26 @@ export function InfluencersTab({ api }: { api: Api }) {
       {mode === "new" && (
         <Card>
           <CardContent className="p-5">
-            <h3 className="font-semibold mb-3">Novo influencer</h3>
+            <h3 className="font-semibold mb-3">Novo acesso</h3>
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {([
+                ["team", "👥 Equipe", "uma senha que abre só as áreas que você marcar"],
+                ["influencer", "🌟 Influencer", "painel dos resultados do cupom dela"],
+              ] as const).map(([id, label, hint]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setNewRole(id)}
+                  className={`text-left border-2 rounded-xl px-4 py-2 ${newRole === id ? "border-black bg-muted/50" : "border-transparent bg-muted/30"}`}
+                >
+                  <span className="font-medium text-sm">{label}</span>
+                  <span className="block text-xs text-muted-foreground">{hint}</span>
+                </button>
+              ))}
+            </div>
             <AccountForm
+              key={newRole}
+              role={newRole}
               initial={{ name: "", password: "", monthlyGoal: "10", permissions: [], couponCodes: [], active: true }}
               coupons={coupons}
               editingId={null}
@@ -332,7 +364,7 @@ export function InfluencersTab({ api }: { api: Api }) {
       ) : accounts.length === 0 && mode !== "new" ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
-            Nenhum influencer ainda. Crie o primeiro, associe um cupom e ele já poderá acompanhar os resultados.
+            Nenhum acesso criado ainda. Crie um de equipe (para quem ajuda no dia a dia) ou de influencer (para acompanhar o cupom).
           </CardContent>
         </Card>
       ) : (
@@ -343,6 +375,7 @@ export function InfluencersTab({ api }: { api: Api }) {
                 <>
                   <h3 className="font-semibold">Editar {a.name}</h3>
                   <AccountForm
+                    role={a.role}
                     initial={{
                       name: a.name,
                       password: "",
@@ -363,30 +396,41 @@ export function InfluencersTab({ api }: { api: Api }) {
                 <>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-lg">{a.name}</h3>
+                    <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">
+                      {a.role === "team" ? "👥 Equipe" : "🌟 Influencer"}
+                    </span>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${a.active ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-700"}`}>
                       {a.active ? "✅ Ativo" : "⏸️ Desligado"}
                     </span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-1 text-sm text-muted-foreground">
-                    <p>
-                      🎟️ Cupons:{" "}
-                      {a.coupons.length > 0 ? a.coupons.map((c) => <span key={c} className="font-mono mr-1">{c}</span>) : "nenhum associado"}
-                    </p>
-                    <p>
-                      🛒 {a.total} compra{a.total !== 1 ? "s" : ""} no total · {a.last30} nos últimos 30 dias
-                    </p>
+                    {a.role === "influencer" && (
+                      <>
+                        <p>
+                          🎟️ Cupons:{" "}
+                          {a.coupons.length > 0 ? a.coupons.map((c) => <span key={c} className="font-mono mr-1">{c}</span>) : "nenhum associado"}
+                        </p>
+                        <p>
+                          🛒 {a.total} compra{a.total !== 1 ? "s" : ""} no total · {a.last30} nos últimos 30 dias
+                        </p>
+                      </>
+                    )}
                     <p>🔑 Último acesso: {ago(a.last_login_at)}</p>
                     <p>
                       👁️ Vê também:{" "}
                       {a.permissions.length > 0
                         ? a.permissions.map((p) => AREAS.find((x) => x.id === p)?.label).filter(Boolean).join(", ")
-                        : "só o painel de resultados"}
+                        : a.role === "team"
+                          ? "nada"
+                          : "só o painel de resultados"}
                     </p>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" onClick={() => setMode({ preview: a })}>
-                      Ver painel dela
-                    </Button>
+                    {a.role === "influencer" && (
+                      <Button size="sm" onClick={() => setMode({ preview: a })}>
+                        Ver painel dela
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => { setMode({ edit: a.id }); setFormError(null) }}>
                       Editar
                     </Button>

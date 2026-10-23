@@ -8,6 +8,7 @@ import { Truck, Calendar, Star } from "lucide-react"
 import { ChoosePayment } from "./choose-payment"
 import { PixCheckout, type PixData } from "./pix-checkout"
 import { DeliveryForm, type DeliveryData } from "./delivery-form"
+import { CashbackNote } from "./cashback-note"
 import { PLANS, formatBRL, frequencyLabel, type Plan } from "@/lib/plans"
 
 export function SubscriptionSection() {
@@ -87,6 +88,8 @@ export function SubscriptionSection() {
             campo para sua mesa.
           </p>
         </div>
+
+        <CashbackNote />
 
         <div className="grid md:grid-cols-3 gap-8 mb-12 max-w-5xl mx-auto">
           {PLANS.map((plan) => (

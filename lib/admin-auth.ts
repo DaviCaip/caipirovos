@@ -23,6 +23,7 @@ export type Permission =
   | "theme" // personalizar o site
   | "influencers" // criar e gerenciar contas de influencer
   | "my_stats" // painel de resultados do próprio cupom (toda conta de influencer tem)
+  | "cashback" // configurar e acompanhar o cashback (só o dono)
 
 export const ALL_PERMISSIONS: Permission[] = [
   "subscriptions",
@@ -32,6 +33,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   "theme",
   "influencers",
   "my_stats",
+  "cashback",
 ]
 
 /** Áreas que o Davi pode liberar para uma conta de influencer (as demais são só dele). */
@@ -105,11 +107,13 @@ export function isEnvPassword(password: string): boolean {
 export function accountToUser(row: any): AdminUser {
   const extras: string[] = Array.isArray(row.permissions) ? row.permissions : []
   const permissions = GRANTABLE_PERMISSIONS.filter((p) => extras.includes(p))
+  // Conta de equipe: só as áreas liberadas. Conta de influencer: também tem o painel de resultados do cupom.
+  const isTeam = row.role === "team"
   return {
     kind: "db",
     id: row.id,
     name: row.name,
-    permissions: [...permissions, "my_stats"],
+    permissions: isTeam ? permissions : [...permissions, "my_stats"],
     monthlyGoal: typeof row.monthly_goal === "number" ? row.monthly_goal : 0,
   }
 }

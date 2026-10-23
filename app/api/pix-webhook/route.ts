@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { MercadoPagoConfig, Payment } from "mercadopago"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getCashbackSettings, grantPixCashback } from "@/lib/cashback"
 
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
@@ -29,12 +30,28 @@ export async function POST(req: NextRequest) {
         .update({ status: "active", paid_at: new Date().toISOString() })
         .eq("payment_id", String(id))
         .eq("status", "pending")
-        .select("coupon_code")
+        .select("coupon_code, customer_name, customer_email, customer_cpf, amount_cents")
       if (error) throw error
 
       // Só conta o uso do cupom na transição pending -> active (evita contar duas vezes se o aviso se repetir).
-      const code = data?.[0]?.coupon_code
-      if (code) await supabase.rpc("increment_coupon_use", { p_code: code })
+      const row = data?.[0]
+      if (row?.coupon_code) await supabase.rpc("increment_coupon_use", { p_code: row.coupon_code })
+
+      // Cashback do Pix: vai para a carteira do cliente (não derruba o aviso do Mercado Pago se falhar).
+      if (row) {
+        try {
+          const settings = await getCashbackSettings(supabase)
+          await grantPixCashback({
+            supabase,
+            settings,
+            paymentId: String(id),
+            customer: { name: row.customer_name, email: row.customer_email, cpf: row.customer_cpf },
+            amountPaidCents: Number(row.amount_cents || 0),
+          })
+        } catch (err: any) {
+          console.error("Webhook Pix: falha no cashback:", err?.message || err)
+        }
+      }
     } else if (payment.status === "cancelled" || payment.status === "rejected") {
       await supabase
         .from("subscriptions")

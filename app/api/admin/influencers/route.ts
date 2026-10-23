@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
     return {
       id: a.id,
       name: a.name,
+      role: a.role === "team" ? "team" : "influencer",
       active: a.active,
       permissions: Array.isArray(a.permissions) ? a.permissions : [],
       monthly_goal: a.monthly_goal,
@@ -74,8 +75,13 @@ export async function POST(req: NextRequest) {
   if (password.length < 6 || password.length > 60) {
     return NextResponse.json({ error: "A senha precisa ter de 6 a 60 caracteres." }, { status: 400 })
   }
-  const goal = parseGoal(b.monthlyGoal)
+  const role = b.role === "team" ? "team" : "influencer"
+  const goal = role === "team" ? 0 : parseGoal(b.monthlyGoal)
   if (Number.isNaN(goal)) return NextResponse.json({ error: "Meta inválida." }, { status: 400 })
+  const permissions = cleanPermissions(b.permissions)
+  if (role === "team" && permissions.length === 0) {
+    return NextResponse.json({ error: "Marque pelo menos uma área para a conta de equipe." }, { status: 400 })
+  }
 
   if (isEnvPassword(password)) return NextResponse.json({ error: "Essa senha já está em uso. Escolha outra." }, { status: 409 })
   const hash = hashLoginPassword(password)
@@ -84,7 +90,7 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
   const { data: created, error } = await supabase
     .from("admin_accounts")
-    .insert({ name, login_hash: hash, permissions: cleanPermissions(b.permissions), monthly_goal: goal ?? 10 })
+    .insert({ name, role, login_hash: hash, permissions, monthly_goal: goal ?? 10 })
     .select("id")
     .single()
   if (error || !created) {
@@ -92,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não foi possível criar a conta." }, { status: 500 })
   }
 
-  const codes = cleanCodes(b.couponCodes)
+  const codes = role === "team" ? [] : cleanCodes(b.couponCodes)
   if (codes.length > 0) {
     await supabase.from("coupons").update({ influencer_id: created.id }).in("code", codes).is("influencer_id", null)
   }
@@ -105,6 +111,17 @@ export async function PATCH(req: NextRequest) {
 
   const b = await req.json().catch(() => ({}))
   if (typeof b.id !== "string" || !b.id) return NextResponse.json({ error: "Conta inválida." }, { status: 400 })
+
+  const supabase = createAdminClient()
+  const { data: current } = await supabase.from("admin_accounts").select("role").eq("id", b.id).maybeSingle()
+  if (!current) return NextResponse.json({ error: "Conta não encontrada." }, { status: 404 })
+  const isTeam = current.role === "team"
+  if (isTeam && b.couponCodes !== undefined && cleanCodes(b.couponCodes).length > 0) {
+    return NextResponse.json({ error: "Conta de equipe não tem cupom." }, { status: 400 })
+  }
+  if (isTeam && b.permissions !== undefined && cleanPermissions(b.permissions).length === 0) {
+    return NextResponse.json({ error: "Marque pelo menos uma área para a conta de equipe." }, { status: 400 })
+  }
 
   const update: Record<string, unknown> = {}
   if (typeof b.name === "string") {
@@ -129,8 +146,6 @@ export async function PATCH(req: NextRequest) {
     update.login_hash = hash
   }
 
-  const supabase = createAdminClient()
-
   if (Object.keys(update).length > 0) {
     const { error } = await supabase.from("admin_accounts").update(update).eq("id", b.id)
     if (error) {
@@ -139,7 +154,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  if (b.couponCodes !== undefined) {
+  if (b.couponCodes !== undefined && !isTeam) {
     const codes = cleanCodes(b.couponCodes)
     // solta os cupons que saíram da lista...
     let release = supabase.from("coupons").update({ influencer_id: null }).eq("influencer_id", b.id)

@@ -8,6 +8,7 @@ import { CouponsTab } from "@/components/admin/coupons-tab"
 import { ThemeTab } from "@/components/admin/theme-tab"
 import { InfluencersTab } from "@/components/admin/influencers-tab"
 import { MyStatsTab } from "@/components/admin/my-stats-tab"
+import { CashbackTab } from "@/components/admin/cashback-tab"
 import { getDeliveryDays } from "@/lib/plans"
 import {
   CheckCircle,
@@ -19,7 +20,8 @@ import {
   Settings,
   Sparkles,
   Sprout,
-  Star,
+  KeyRound,
+  PiggyBank,
   Store,
   Tag,
   Trash2,
@@ -29,8 +31,8 @@ import {
   X,
 } from "lucide-react"
 
-type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme" | "influencers" | "my_stats"
-type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme" | "influencers" | "mystats"
+type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme" | "influencers" | "my_stats" | "cashback"
+type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme" | "influencers" | "mystats" | "cashback"
 
 interface Subscription {
   id: string
@@ -326,7 +328,8 @@ export default function AdminPage() {
     { id: "producers", label: "Produtores", icon: Sprout, show: can("registrations") },
     { id: "coupons", label: "Cupons", icon: Tag, show: can("coupons") },
     { id: "theme", label: "Personalizar", icon: Palette, show: can("theme") },
-    { id: "influencers", label: "Influencers", icon: Star, show: can("influencers") },
+    { id: "cashback", label: "Cashback", icon: PiggyBank, show: can("cashback") },
+    { id: "influencers", label: "Acessos", icon: KeyRound, show: can("influencers") },
   ]
 
   return (
@@ -420,6 +423,7 @@ export default function AdminPage() {
 
         {tab === "coupons" && can("coupons") && <CouponsTab api={api} />}
         {tab === "theme" && can("theme") && <ThemeTab api={api} />}
+        {tab === "cashback" && can("cashback") && <CashbackTab api={api} />}
         {tab === "influencers" && can("influencers") && <InfluencersTab api={api} />}
         {tab === "mystats" && can("my_stats") && !can("influencers") && <MyStatsTab api={api} />}
 
