@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { MercadoPagoConfig, Payment } from "mercadopago"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getCashbackSettings, grantPixCashback } from "@/lib/cashback"
+import { createDelivery } from "@/lib/deliveries"
 
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
@@ -30,12 +31,21 @@ export async function POST(req: NextRequest) {
         .update({ status: "active", paid_at: new Date().toISOString() })
         .eq("payment_id", String(id))
         .eq("status", "pending")
-        .select("coupon_code, customer_name, customer_email, customer_cpf, amount_cents")
+        .select("id, delivery_day, coupon_code, customer_name, customer_email, customer_cpf, amount_cents")
       if (error) throw error
 
       // Só conta o uso do cupom na transição pending -> active (evita contar duas vezes se o aviso se repetir).
       const row = data?.[0]
       if (row?.coupon_code) await supabase.rpc("increment_coupon_use", { p_code: row.coupon_code })
+
+      // Pix confirmado = entrega criada (não derruba o aviso do Mercado Pago se falhar).
+      if (row) {
+        try {
+          await createDelivery(supabase, { subscriptionId: row.id, sourceId: `pix_${id}`, preferredDay: row.delivery_day })
+        } catch (err: any) {
+          console.error("Webhook Pix: falha ao criar a entrega:", err?.message || err)
+        }
+      }
 
       // Cashback do Pix: vai para a carteira do cliente (não derruba o aviso do Mercado Pago se falhar).
       if (row) {

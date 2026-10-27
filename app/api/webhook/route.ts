@@ -3,6 +3,7 @@ import Stripe from "stripe"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { DELIVERY_CITY, DELIVERY_STATE } from "@/lib/delivery"
 import { getCashbackSettings, grantCardCashback } from "@/lib/cashback"
+import { createDelivery } from "@/lib/deliveries"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
@@ -69,6 +70,26 @@ export async function POST(req: NextRequest) {
     if (!existing && m.couponCode) {
       await supabase.rpc("increment_coupon_use", { p_code: m.couponCode })
     }
+
+    // A primeira entrega nasce junto com o primeiro pagamento. (Se falhar, não derruba o pagamento:
+    // a conferência no painel de Entregas recria as que ficaram faltando.)
+    try {
+      const { data: subRow } = await supabase
+        .from("subscriptions")
+        .select("id, delivery_day")
+        .eq("stripe_subscription_id", subscriptionId)
+        .maybeSingle()
+      if (subRow) {
+        const inv = typeof session.invoice === "string" ? session.invoice : (session.invoice?.id ?? null)
+        await createDelivery(supabase, {
+          subscriptionId: subRow.id,
+          sourceId: inv ? `inv_${inv}` : `sub_${subscriptionId}_first`,
+          preferredDay: subRow.delivery_day,
+        })
+      }
+    } catch (err: any) {
+      console.error("Webhook Stripe: falha ao criar a entrega:", err?.message || err)
+    }
   }
 
   // Cashback no cartão: a cada fatura paga, o cliente ganha crédito que o Stripe desconta da próxima fatura.
@@ -96,6 +117,29 @@ export async function POST(req: NextRequest) {
     } catch (err: any) {
       console.error("Webhook Stripe: falha no cashback:", err?.message || err)
       return NextResponse.json({ error: "Falha no cashback" }, { status: 500 })
+    }
+
+    // Cada mês pago (renovação do cartão) gera a entrega daquele mês.
+    // O mesmo código "inv_<fatura>" evita entrega em dobro quando o primeiro pagamento chega pelos dois avisos.
+    const reason = invoice.billing_reason
+    const stripeSubId = typeof sub === "string" ? sub : (sub?.id ?? null)
+    if ((reason === "subscription_cycle" || reason === "subscription_create") && stripeSubId && invoice.id) {
+      try {
+        const { data: subRow } = await supabase
+          .from("subscriptions")
+          .select("id, delivery_day")
+          .eq("stripe_subscription_id", stripeSubId)
+          .maybeSingle()
+        if (subRow) {
+          await createDelivery(supabase, {
+            subscriptionId: subRow.id,
+            sourceId: `inv_${invoice.id}`,
+            preferredDay: subRow.delivery_day,
+          })
+        }
+      } catch (err: any) {
+        console.error("Webhook Stripe: falha ao criar a entrega da renovação:", err?.message || err)
+      }
     }
   }
 

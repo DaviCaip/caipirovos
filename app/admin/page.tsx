@@ -9,6 +9,7 @@ import { ThemeTab } from "@/components/admin/theme-tab"
 import { InfluencersTab } from "@/components/admin/influencers-tab"
 import { MyStatsTab } from "@/components/admin/my-stats-tab"
 import { CashbackTab } from "@/components/admin/cashback-tab"
+import { DeliveriesTab } from "@/components/admin/deliveries-tab"
 import { getDeliveryDays } from "@/lib/plans"
 import {
   CheckCircle,
@@ -31,8 +32,8 @@ import {
   X,
 } from "lucide-react"
 
-type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme" | "influencers" | "my_stats" | "cashback"
-type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme" | "influencers" | "mystats" | "cashback"
+type Permission = "subscriptions" | "delete_subscriptions" | "registrations" | "coupons" | "theme" | "influencers" | "my_stats" | "cashback" | "deliveries" | "courier"
+type Tab = "subscriptions" | "resellers" | "producers" | "coupons" | "theme" | "influencers" | "mystats" | "cashback" | "deliveries"
 
 interface Subscription {
   id: string
@@ -188,6 +189,8 @@ export default function AdminPage() {
         ? "subscriptions"
         : user.permissions.includes("registrations")
           ? "resellers"
+          : user.permissions.includes("deliveries")
+            ? "deliveries"
           : user.permissions.includes("coupons")
             ? "coupons"
             : user.permissions.includes("theme")
@@ -321,9 +324,26 @@ export default function AdminPage() {
     )
   }
 
+  // Quem só tem senha de entregador usa o app do celular, não o painel
+  if (user.permissions.length === 1 && user.permissions[0] === "courier") {
+    if (typeof window !== "undefined") window.location.replace("/entregador")
+    return (
+      <div className="min-h-screen bg-muted/30 flex items-center justify-center p-6 text-center">
+        <div className="space-y-3">
+          <div className="text-4xl">🚚</div>
+          <p>Abrindo o app do entregador...</p>
+          <a className="underline text-sm" href="/entregador">
+            Toque aqui se não abrir
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   const tabs: { id: Tab; label: string; icon: any; show: boolean }[] = [
     { id: "mystats", label: "Meu painel", icon: Sparkles, show: can("my_stats") && !can("influencers") },
     { id: "subscriptions", label: "Assinaturas", icon: Users, show: can("subscriptions") },
+    { id: "deliveries", label: "Entregas", icon: Truck, show: can("deliveries") },
     { id: "resellers", label: "Revendedores", icon: Store, show: can("registrations") },
     { id: "producers", label: "Produtores", icon: Sprout, show: can("registrations") },
     { id: "coupons", label: "Cupons", icon: Tag, show: can("coupons") },
@@ -423,6 +443,7 @@ export default function AdminPage() {
 
         {tab === "coupons" && can("coupons") && <CouponsTab api={api} />}
         {tab === "theme" && can("theme") && <ThemeTab api={api} />}
+        {tab === "deliveries" && can("deliveries") && <DeliveriesTab api={api} />}
         {tab === "cashback" && can("cashback") && <CashbackTab api={api} />}
         {tab === "influencers" && can("influencers") && <InfluencersTab api={api} />}
         {tab === "mystats" && can("my_stats") && !can("influencers") && <MyStatsTab api={api} />}

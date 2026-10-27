@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     return {
       id: a.id,
       name: a.name,
-      role: a.role === "team" ? "team" : "influencer",
+      role: a.role === "team" ? "team" : a.role === "courier" ? "courier" : "influencer",
       active: a.active,
       permissions: Array.isArray(a.permissions) ? a.permissions : [],
       monthly_goal: a.monthly_goal,
@@ -75,10 +75,10 @@ export async function POST(req: NextRequest) {
   if (password.length < 6 || password.length > 60) {
     return NextResponse.json({ error: "A senha precisa ter de 6 a 60 caracteres." }, { status: 400 })
   }
-  const role = b.role === "team" ? "team" : "influencer"
-  const goal = role === "team" ? 0 : parseGoal(b.monthlyGoal)
+  const role = b.role === "team" ? "team" : b.role === "courier" ? "courier" : "influencer"
+  const goal = role !== "influencer" ? 0 : parseGoal(b.monthlyGoal)
   if (Number.isNaN(goal)) return NextResponse.json({ error: "Meta inválida." }, { status: 400 })
-  const permissions = cleanPermissions(b.permissions)
+  const permissions = role === "courier" ? [] : cleanPermissions(b.permissions)
   if (role === "team" && permissions.length === 0) {
     return NextResponse.json({ error: "Marque pelo menos uma área para a conta de equipe." }, { status: 400 })
   }
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não foi possível criar a conta." }, { status: 500 })
   }
 
-  const codes = role === "team" ? [] : cleanCodes(b.couponCodes)
+  const codes = role !== "influencer" ? [] : cleanCodes(b.couponCodes)
   if (codes.length > 0) {
     await supabase.from("coupons").update({ influencer_id: created.id }).in("code", codes).is("influencer_id", null)
   }
@@ -116,8 +116,10 @@ export async function PATCH(req: NextRequest) {
   const { data: current } = await supabase.from("admin_accounts").select("role").eq("id", b.id).maybeSingle()
   if (!current) return NextResponse.json({ error: "Conta não encontrada." }, { status: 404 })
   const isTeam = current.role === "team"
-  if (isTeam && b.couponCodes !== undefined && cleanCodes(b.couponCodes).length > 0) {
-    return NextResponse.json({ error: "Conta de equipe não tem cupom." }, { status: 400 })
+  const isCourier = current.role === "courier"
+  const noCoupons = isTeam || isCourier
+  if (noCoupons && b.couponCodes !== undefined && cleanCodes(b.couponCodes).length > 0) {
+    return NextResponse.json({ error: "Esse tipo de conta não tem cupom." }, { status: 400 })
   }
   if (isTeam && b.permissions !== undefined && cleanPermissions(b.permissions).length === 0) {
     return NextResponse.json({ error: "Marque pelo menos uma área para a conta de equipe." }, { status: 400 })
@@ -130,7 +132,7 @@ export async function PATCH(req: NextRequest) {
     update.name = name
   }
   if (typeof b.active === "boolean") update.active = b.active
-  if (b.permissions !== undefined) update.permissions = cleanPermissions(b.permissions)
+  if (b.permissions !== undefined && !isCourier) update.permissions = cleanPermissions(b.permissions)
   if (b.monthlyGoal !== undefined) {
     const goal = parseGoal(b.monthlyGoal)
     if (goal === null || Number.isNaN(goal)) return NextResponse.json({ error: "Meta inválida." }, { status: 400 })
@@ -154,7 +156,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  if (b.couponCodes !== undefined && !isTeam) {
+  if (b.couponCodes !== undefined && !noCoupons) {
     const codes = cleanCodes(b.couponCodes)
     // solta os cupons que saíram da lista...
     let release = supabase.from("coupons").update({ influencer_id: null }).eq("influencer_id", b.id)

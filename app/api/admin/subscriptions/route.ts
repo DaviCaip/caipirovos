@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin, verifyUserPassword } from "@/lib/admin-auth"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { getDeliveryDays } from "@/lib/plans"
+import { changeDeliveryStatus, createDelivery } from "@/lib/deliveries"
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req, "subscriptions")
@@ -28,19 +28,35 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
 
   if (action === "deliver") {
-    const { data: sub } = await supabase.from("subscriptions").select("plan_name").eq("id", id).maybeSingle()
+    const { data: sub } = await supabase.from("subscriptions").select("delivery_day").eq("id", id).maybeSingle()
     if (!sub) return NextResponse.json({ error: "Assinatura não encontrada." }, { status: 404 })
 
-    const now = new Date()
-    const next = new Date(now)
-    next.setDate(next.getDate() + getDeliveryDays(sub.plan_name))
-
-    const { error } = await supabase
-      .from("subscriptions")
-      .update({ last_delivered_at: now.toISOString(), next_delivery_at: next.toISOString() })
-      .eq("id", id)
-    if (error) return NextResponse.json({ error: "Falha ao marcar entrega." }, { status: 500 })
-    await supabase.from("delivery_history").insert({ subscription_id: id, delivered_at: now.toISOString() })
+    // Uma única fonte da verdade: fecha a entrega em aberto desta assinatura (ou registra uma já entregue).
+    const { data: open } = await supabase
+      .from("deliveries")
+      .select("id, status")
+      .eq("subscription_id", id)
+      .in("status", ["accepted", "preparing", "out", "failed"])
+      .order("due_date", { ascending: true })
+      .limit(1)
+    let deliveryId: string | undefined = open?.[0]?.id
+    if (!deliveryId) {
+      const created = await createDelivery(supabase, {
+        subscriptionId: id,
+        sourceId: `manual_${Date.now()}_${id}`,
+        preferredDay: sub.delivery_day,
+        note: "Registrada pelo botão Marcar entregue",
+        byName: auth.user.name,
+      })
+      deliveryId = created.id
+    }
+    if (!deliveryId) return NextResponse.json({ error: "Falha ao marcar entrega." }, { status: 500 })
+    // quem gerencia pode fechar de qualquer etapa: passa por "saiu para entrega" se ainda não saiu
+    if (open?.[0]?.status !== "out") {
+      await changeDeliveryStatus(supabase, { id: deliveryId, to: "out", user: auth.user, asCourier: false })
+    }
+    const r = await changeDeliveryStatus(supabase, { id: deliveryId, to: "delivered", user: auth.user, asCourier: false })
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.httpStatus })
     return NextResponse.json({ ok: true })
   }
 
@@ -88,6 +104,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   await supabase.from("delivery_history").delete().eq("subscription_id", id)
+  await supabase.from("deliveries").delete().eq("subscription_id", id)
   const { error } = await supabase.from("subscriptions").delete().eq("id", id)
   if (error) return NextResponse.json({ error: "Não foi possível excluir." }, { status: 500 })
   return NextResponse.json({ ok: true })

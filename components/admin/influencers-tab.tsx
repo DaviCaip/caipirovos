@@ -10,7 +10,7 @@ type Api = (path: string, init?: RequestInit) => Promise<any>
 interface Account {
   id: string
   name: string
-  role: "influencer" | "team"
+  role: "influencer" | "team" | "courier"
   active: boolean
   permissions: string[]
   monthly_goal: number
@@ -32,6 +32,7 @@ const AREAS = [
   { id: "registrations", label: "Revendedores e produtores", warn: "mostra contatos dos cadastros" },
   { id: "coupons", label: "Cupons", warn: "pode criar e desligar qualquer cupom" },
   { id: "theme", label: "Personalizar o site", warn: "pode trocar o tema do site inteiro" },
+  { id: "deliveries", label: "Entregas (acompanhar e atualizar)", warn: "mostra nome, endereço e telefone dos clientes" },
 ]
 
 function generatePassword(): string {
@@ -67,7 +68,7 @@ function AccountForm({
   onCancel,
 }: {
   initial: FormValues
-  role: "influencer" | "team"
+  role: "influencer" | "team" | "courier"
   coupons: CouponRef[]
   editingId: string | null
   saving: boolean
@@ -83,10 +84,10 @@ function AccountForm({
 
   return (
     <div className="space-y-4">
-      <div className={`grid gap-3 ${role === "team" ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+      <div className={`grid gap-3 ${role !== "influencer" ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
         <div>
-          <label className="text-xs text-muted-foreground">{role === "team" ? "Nome do acesso" : "Nome do influencer"}</label>
-          <input className={input} value={v.name} maxLength={60} placeholder={role === "team" ? "Ex.: Equipe" : "Ex.: Maria Fit"} onChange={(e) => setV({ ...v, name: e.target.value })} />
+          <label className="text-xs text-muted-foreground">{role === "team" ? "Nome do acesso" : role === "courier" ? "Nome do entregador" : "Nome do influencer"}</label>
+          <input className={input} value={v.name} maxLength={60} placeholder={role === "team" ? "Ex.: Equipe" : role === "courier" ? "Ex.: João (entregas)" : "Ex.: Maria Fit"} onChange={(e) => setV({ ...v, name: e.target.value })} />
         </div>
         <div>
           <label className="text-xs text-muted-foreground">{editingId ? "Nova senha (deixe vazio para manter)" : "Senha de acesso"}</label>
@@ -105,6 +106,14 @@ function AccountForm({
         )}
       </div>
 
+      {role === "courier" && (
+        <p className="text-sm bg-muted/50 rounded-lg p-3">
+          🚚 O entregador entra em <strong>/entregador</strong> (dá para instalar na tela inicial do celular) e vê só as entregas: nome, telefone,
+          endereço e instruções. Não vê CPF, e-mail nem valores.
+        </p>
+      )}
+
+      {role !== "courier" && (
       <div>
         <p className="text-xs text-muted-foreground mb-1">
           {role === "influencer"
@@ -123,6 +132,7 @@ function AccountForm({
           ))}
         </div>
       </div>
+      )}
 
       {role === "influencer" && (
       <div>
@@ -175,7 +185,7 @@ export function InfluencersTab({ api }: { api: Api }) {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState<"list" | "new" | { edit: string } | { preview: Account }>("list")
-  const [newRole, setNewRole] = useState<"influencer" | "team">("team")
+  const [newRole, setNewRole] = useState<"influencer" | "team" | "courier">("team")
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null)
@@ -308,6 +318,7 @@ export function InfluencersTab({ api }: { api: Api }) {
             <div className="flex gap-2 mb-4 flex-wrap">
               {([
                 ["team", "👥 Equipe", "uma senha que abre só as áreas que você marcar"],
+                ["courier", "🚚 Entregador", "app para entregar e dar baixa (só vê o necessário)"],
                 ["influencer", "🌟 Influencer", "painel dos resultados do cupom dela"],
               ] as const).map(([id, label, hint]) => (
                 <button
@@ -397,7 +408,7 @@ export function InfluencersTab({ api }: { api: Api }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-lg">{a.name}</h3>
                     <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">
-                      {a.role === "team" ? "👥 Equipe" : "🌟 Influencer"}
+                      {a.role === "team" ? "👥 Equipe" : a.role === "courier" ? "🚚 Entregador" : "🌟 Influencer"}
                     </span>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${a.active ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-700"}`}>
                       {a.active ? "✅ Ativo" : "⏸️ Desligado"}
@@ -418,7 +429,9 @@ export function InfluencersTab({ api }: { api: Api }) {
                     <p>🔑 Último acesso: {ago(a.last_login_at)}</p>
                     <p>
                       👁️ Vê também:{" "}
-                      {a.permissions.length > 0
+                      {a.role === "courier"
+                        ? "o app do entregador (/entregador)"
+                        : a.permissions.length > 0
                         ? a.permissions.map((p) => AREAS.find((x) => x.id === p)?.label).filter(Boolean).join(", ")
                         : a.role === "team"
                           ? "nada"

@@ -24,6 +24,8 @@ export type Permission =
   | "influencers" // criar e gerenciar contas de influencer
   | "my_stats" // painel de resultados do próprio cupom (toda conta de influencer tem)
   | "cashback" // configurar e acompanhar o cashback (só o dono)
+  | "deliveries" // quadro de entregas: acompanhar, atualizar etapas, criar entrega avulsa
+  | "courier" // app do entregador (toda conta de entregador tem)
 
 export const ALL_PERMISSIONS: Permission[] = [
   "subscriptions",
@@ -34,10 +36,12 @@ export const ALL_PERMISSIONS: Permission[] = [
   "influencers",
   "my_stats",
   "cashback",
+  "deliveries",
+  "courier",
 ]
 
 /** Áreas que o Davi pode liberar para uma conta de influencer (as demais são só dele). */
-export const GRANTABLE_PERMISSIONS: Permission[] = ["subscriptions", "registrations", "coupons", "theme"]
+export const GRANTABLE_PERMISSIONS: Permission[] = ["subscriptions", "registrations", "coupons", "theme", "deliveries"]
 
 export const COOKIE_NAME = "cv_admin"
 export const SESSION_HOURS = 12
@@ -107,7 +111,10 @@ export function isEnvPassword(password: string): boolean {
 export function accountToUser(row: any): AdminUser {
   const extras: string[] = Array.isArray(row.permissions) ? row.permissions : []
   const permissions = GRANTABLE_PERMISSIONS.filter((p) => extras.includes(p))
-  // Conta de equipe: só as áreas liberadas. Conta de influencer: também tem o painel de resultados do cupom.
+  // Conta de entregador: só o app de entregas. Equipe: só as áreas liberadas. Influencer: também o painel do cupom.
+  if (row.role === "courier") {
+    return { kind: "db", id: row.id, name: row.name, permissions: ["courier"], monthlyGoal: 0 }
+  }
   const isTeam = row.role === "team"
   return {
     kind: "db",
