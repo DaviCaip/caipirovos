@@ -20,7 +20,7 @@ export const PLANS: Plan[] = [
   {
     id: "basic",
     name: "Basic",
-    eggs: 60,
+    eggs: 50,
     priceInCents: 6999,
     deliveryDays: 30,
     features: [
