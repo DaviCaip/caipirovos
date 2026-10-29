@@ -130,6 +130,8 @@ export default function AdminPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [editData, setEditData] = useState<any>(null)
   const [pageError, setPageError] = useState<string | null>(null)
+  const [access, setAccess] = useState<{ sub: Subscription; loading: boolean; error?: string; temp?: string; created?: boolean } | null>(null)
+  const [accessCopied, setAccessCopied] = useState(false)
 
   const can = useCallback((p: Permission) => !!user?.permissions.includes(p), [user])
 
@@ -280,6 +282,16 @@ export default function AdminPage() {
   }
 
   const isInactive = (s: Subscription) => s.status !== "active" && s.status !== "pending"
+  async function createAccess(sub: Subscription) {
+    setAccess({ sub, loading: true })
+    try {
+      const json = await api("/api/admin/customers", { method: "POST", body: JSON.stringify({ subscriptionId: sub.id }) })
+      setAccess({ sub, loading: false, temp: json.tempPassword, created: json.created })
+    } catch (e: any) {
+      setAccess({ sub, loading: false, error: e.message })
+    }
+  }
+
   const filtered = subscriptions.filter((s) =>
     filter === "all" ? true : filter === "canceled" ? isInactive(s) : s.status === filter
   )
@@ -551,6 +563,13 @@ export default function AdminPage() {
                                   </div>
                                 )}
                               </div>
+                              {sub.status !== "pending" && (
+                                <div className="flex flex-col gap-2 min-w-[160px]">
+                                  <Button size="sm" variant="outline" onClick={() => createAccess(sub)}>
+                                    🔑 Acesso do cliente
+                                  </Button>
+                                </div>
+                              )}
                               {sub.status !== "active" && can("delete_subscriptions") && (
                                 <div className="flex flex-col gap-2 min-w-[160px]">
                                   <p className="text-xs text-muted-foreground">
@@ -724,6 +743,56 @@ export default function AdminPage() {
             </>
           ))}
       </div>
+
+      {access && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-lg">🔑 Acesso de {access.sub.customer_name}</h3>
+              <button onClick={() => setAccess(null)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {access.loading && <p className="text-sm text-muted-foreground">Gerando...</p>}
+            {access.error && <p className="text-sm text-red-600">{access.error}</p>}
+            {access.temp && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {access.created ? "Acesso criado." : "Senha redefinida."} Passe para o cliente. Ele entra com o CPF e esta senha provisória e escolhe uma nova senha no primeiro acesso.
+                </p>
+                <p className="text-center text-2xl font-mono font-bold tracking-wider bg-muted rounded-lg py-3">{access.temp}</p>
+                <p className="text-xs text-amber-700">Anote agora: depois que você fechar, não dá para ver de novo (só gerar outra).</p>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={async () => {
+                      const text = `Olá, ${access.sub.customer_name.split(/\s+/)[0]}! Seu acesso à área do assinante Caipirovos:\n${window.location.origin}/conta\nCPF: o mesmo da assinatura\nSenha provisória: ${access.temp}\n(no primeiro acesso você escolhe a sua senha)`
+                      try {
+                        await navigator.clipboard.writeText(text)
+                        setAccessCopied(true)
+                        setTimeout(() => setAccessCopied(false), 2000)
+                      } catch {}
+                    }}
+                  >
+                    {accessCopied ? "Copiado! ✓" : "Copiar mensagem"}
+                  </Button>
+                  {access.sub.customer_phone && (
+                    <Button variant="outline" asChild>
+                      <a
+                        target="_blank"
+                        rel="noreferrer"
+                        href={`https://wa.me/55${access.sub.customer_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Olá, ${access.sub.customer_name.split(/\s+/)[0]}! Seu acesso à área do assinante Caipirovos:\n${typeof window !== "undefined" ? window.location.origin : ""}/conta\nCPF: o mesmo da assinatura\nSenha provisória: ${access.temp}\n(no primeiro acesso você escolhe a sua senha)`)}`}
+                      >
+                        WhatsApp
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {confirmAction && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

@@ -3,6 +3,7 @@ import { MercadoPagoConfig, Payment } from "mercadopago"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getCashbackSettings, grantPixCashback } from "@/lib/cashback"
 import { createDelivery } from "@/lib/deliveries"
+import { ensureCustomerAccount } from "@/lib/customers"
 
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
         .update({ status: "active", paid_at: new Date().toISOString() })
         .eq("payment_id", String(id))
         .eq("status", "pending")
-        .select("id, delivery_day, coupon_code, customer_name, customer_email, customer_cpf, amount_cents")
+        .select("id, delivery_day, signup_id, coupon_code, customer_name, customer_email, customer_phone, customer_cpf, amount_cents")
       if (error) throw error
 
       // Só conta o uso do cupom na transição pending -> active (evita contar duas vezes se o aviso se repetir).
@@ -44,6 +45,21 @@ export async function POST(req: NextRequest) {
           await createDelivery(supabase, { subscriptionId: row.id, sourceId: `pix_${id}`, preferredDay: row.delivery_day })
         } catch (err: any) {
           console.error("Webhook Pix: falha ao criar a entrega:", err?.message || err)
+        }
+      }
+
+      // Pix confirmado: cria a conta do assinante (CPF + senha escolhida), se ainda não existir.
+      if (row) {
+        try {
+          await ensureCustomerAccount(supabase, {
+            cpf: row.customer_cpf,
+            name: row.customer_name,
+            email: row.customer_email,
+            phone: row.customer_phone,
+            signupId: row.signup_id,
+          })
+        } catch (err: any) {
+          console.error("Webhook Pix: falha ao criar a conta do assinante:", err?.message || err)
         }
       }
 

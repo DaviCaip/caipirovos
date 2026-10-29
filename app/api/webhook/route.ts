@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import Stripe from "stripe"
+import { getStripe } from "@/lib/stripe"
+import { onlyDigits } from "@/lib/br"
+import { ensureCustomerAccount } from "@/lib/customers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { DELIVERY_CITY, DELIVERY_STATE } from "@/lib/delivery"
 import { getCashbackSettings, grantCardCashback } from "@/lib/cashback"
 import { createDelivery } from "@/lib/deliveries"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+const stripe = getStripe()
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -39,6 +42,9 @@ export async function POST(req: NextRequest) {
         customer_email: session.customer_email || session.customer_details?.email || m.customerEmail || null,
         customer_phone: m.customerPhone,
         customer_cpf: m.customerCpf,
+        cpf_digits: onlyDigits(m.customerCpf || "") || null,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : (session.customer?.id ?? null),
+        signup_id: m.signupId || null,
         plan_name: m.planName,
         status: "active",
         cep: m.cep,
@@ -89,6 +95,19 @@ export async function POST(req: NextRequest) {
       }
     } catch (err: any) {
       console.error("Webhook Stripe: falha ao criar a entrega:", err?.message || err)
+    }
+
+    // Pagamento confirmado: cria a conta do assinante (CPF + a senha que ele escolheu), se ainda não existir.
+    try {
+      await ensureCustomerAccount(supabase, {
+        cpf: m.customerCpf,
+        name: m.customerName,
+        email: session.customer_email || session.customer_details?.email || m.customerEmail || null,
+        phone: m.customerPhone,
+        signupId: m.signupId,
+      })
+    } catch (err: any) {
+      console.error("Webhook Stripe: falha ao criar a conta do assinante:", err?.message || err)
     }
   }
 

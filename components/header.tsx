@@ -48,6 +48,9 @@ export function Header() {
                 {item.label}
               </button>
             ))}
+            <a href="/conta" className="text-black font-medium hover:text-yellow-600 transition-colors">
+              Minha conta
+            </a>
           </nav>
 
           <div className="flex items-center space-x-1.5 md:space-x-3">
@@ -100,6 +103,9 @@ export function Header() {
                 {item.label}
               </button>
             ))}
+            <a href="/conta" className="text-left text-black font-medium py-2.5 px-1 hover:text-yellow-600 transition-colors">
+              Minha conta
+            </a>
           </nav>
         )}
       </div>

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import Stripe from "stripe"
+import { getStripe } from "@/lib/stripe"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { createPendingSignup } from "@/lib/customers"
+import { validatePassword } from "@/lib/customer-auth"
 import { getPlanByName } from "@/lib/plans"
 import { sanitizeDelivery, validateDelivery } from "@/lib/delivery"
 import { resolveCoupon, type CouponRow } from "@/lib/coupons"
 import { sendOrderNotification } from "@/lib/notify"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+const stripe = getStripe()
 
 async function getOrCreateStripeCoupon(c: CouponRow): Promise<string> {
   const id = `CAIPI_${c.code}_${c.discount_type}_${c.discount_value}_${c.duration}`.replace(/[^A-Za-z0-9_-]/g, "_")
@@ -39,8 +42,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Confira os dados de entrega.", fields: fieldErrors }, { status: 400 })
     }
 
+    const passwordError = validatePassword(body?.password)
+    if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 })
+
     const coupon = await resolveCoupon(body?.couponCode, plan)
     if (coupon && !coupon.ok) return NextResponse.json({ error: coupon.error }, { status: 400 })
+
+    // A senha não vai para o Stripe: fica guardada (já em hash) aqui, e a conta só nasce quando o pagamento for confirmado.
+    const signupId = await createPendingSignup(createAdminClient(), {
+      cpf: delivery.cpf,
+      name: delivery.name,
+      email: delivery.email,
+      phone: delivery.phone,
+      password: body.password,
+    })
 
     const discountCents = coupon?.ok ? coupon.discountCents : 0
     const amountCents = coupon?.ok ? coupon.finalCents : plan.priceInCents
@@ -85,6 +100,7 @@ export async function POST(req: NextRequest) {
         deliveryPeriod: delivery.deliveryPeriod,
         instructions: delivery.instructions,
         couponCode,
+        signupId,
         discountCents: String(discountCents),
         amountCents: String(amountCents),
       },

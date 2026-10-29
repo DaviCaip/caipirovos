@@ -36,11 +36,14 @@ export async function createDelivery(
     byName?: string
   }
 ): Promise<{ result: "created" | "duplicate"; id?: string }> {
+  // o plano da hora do pagamento fica guardado: se o cliente trocar de plano depois, esta entrega não muda
+  const { data: sub } = await supabase.from("subscriptions").select("plan_name").eq("id", a.subscriptionId).maybeSingle()
   const { data, error } = await supabase
     .from("deliveries")
     .insert({
       subscription_id: String(a.subscriptionId),
       source_id: a.sourceId,
+      plan_name: sub?.plan_name ?? null,
       due_date: a.dueDate || computeDueDate(a.preferredDay),
       note: a.note || null,
     })
@@ -252,7 +255,8 @@ export async function loadDeliveryViews(supabase: SupabaseClient, opts: { withEv
 
   return rows.map((d: any): DeliveryView => {
     const s = subs.get(String(d.subscription_id)) ?? {}
-    const eggs = getPlanByName(s.plan_name)?.eggs ?? 0
+    const planName: string = d.plan_name || s.plan_name || ""
+    const eggs = getPlanByName(planName)?.eggs ?? 0
     return {
       id: d.id,
       status: d.status,
@@ -270,7 +274,7 @@ export async function loadDeliveryViews(supabase: SupabaseClient, opts: { withEv
       customer: {
         name: s.customer_name || "Cliente",
         phone: s.customer_phone || "",
-        plan: s.plan_name || "",
+        plan: planName,
         eggs,
         trays: eggs / 30,
         street: s.street || "",

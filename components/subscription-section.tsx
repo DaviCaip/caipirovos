@@ -17,6 +17,7 @@ export function SubscriptionSection() {
   const [pixOpen, setPixOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [deliveryData, setDeliveryData] = useState<DeliveryData | null>(null)
+  const [accountPassword, setAccountPassword] = useState("")
   const [pix, setPix] = useState<PixData | null>(null)
   const [loading, setLoading] = useState<"card" | "pix" | null>(null)
   const [payError, setPayError] = useState<string | null>(null)
@@ -27,8 +28,9 @@ export function SubscriptionSection() {
     setDeliveryFormOpen(true)
   }
 
-  function handleDeliveryContinue(data: DeliveryData) {
+  function handleDeliveryContinue(data: DeliveryData, password: string) {
     setDeliveryData(data)
+    setAccountPassword(password)
     setDeliveryFormOpen(false)
     setPaymentOpen(true)
   }
@@ -37,7 +39,7 @@ export function SubscriptionSection() {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planName: selectedPlan?.name, delivery: deliveryData, couponCode }),
+      body: JSON.stringify({ planName: selectedPlan?.name, delivery: deliveryData, couponCode, password: accountPassword }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(json.error || "Algo deu errado. Tente novamente.")

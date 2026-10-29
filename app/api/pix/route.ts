@@ -6,6 +6,8 @@ import { resolveCoupon } from "@/lib/coupons"
 import { sendOrderNotification } from "@/lib/notify"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { onlyDigits } from "@/lib/br"
+import { createPendingSignup } from "@/lib/customers"
+import { validatePassword } from "@/lib/customer-auth"
 
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
@@ -24,6 +26,9 @@ export async function POST(req: NextRequest) {
     if (Object.keys(fieldErrors).length > 0) {
       return NextResponse.json({ error: "Confira os dados de entrega.", fields: fieldErrors }, { status: 400 })
     }
+
+    const passwordError = validatePassword(body?.password)
+    if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 })
 
     const coupon = await resolveCoupon(body?.couponCode, plan)
     if (coupon && !coupon.ok) return NextResponse.json({ error: coupon.error }, { status: 400 })
@@ -56,6 +61,14 @@ export async function POST(req: NextRequest) {
     const qrCodeBase64 = result.point_of_interaction?.transaction_data?.qr_code_base64
     if (!qrCode) return NextResponse.json({ error: "Erro ao gerar Pix." }, { status: 400 })
 
+    const signupId = await createPendingSignup(createAdminClient(), {
+      cpf: delivery.cpf,
+      name: delivery.name,
+      email: delivery.email,
+      phone: delivery.phone,
+      password: body.password,
+    })
+
     // Guarda o pedido como "pending"; o webhook do Mercado Pago muda para "active" quando o Pix for pago.
     const supabase = createAdminClient()
     const { error: dbError } = await supabase.from("subscriptions").insert({
@@ -63,6 +76,8 @@ export async function POST(req: NextRequest) {
       customer_email: delivery.email,
       customer_phone: delivery.phone,
       customer_cpf: delivery.cpf,
+      cpf_digits: onlyDigits(delivery.cpf),
+      signup_id: signupId,
       plan_name: plan.name,
       status: "pending",
       cep: delivery.cep,

@@ -24,7 +24,7 @@ export type { DeliveryData }
 interface DeliveryFormProps {
   isOpen: boolean
   onClose: () => void
-  onContinue: (data: DeliveryData) => void
+  onContinue: (data: DeliveryData, password: string) => void
   planName: string
 }
 
@@ -46,6 +46,9 @@ export function DeliveryForm({ isOpen, onClose, onContinue, planName }: Delivery
   const [data, setData] = useState<DeliveryData>(EMPTY_DELIVERY)
   const [errors, setErrors] = useState<Partial<Record<keyof DeliveryData, string>>>({})
   const [loadingCep, setLoadingCep] = useState(false)
+  const [password, setPassword] = useState("")
+  const [password2, setPassword2] = useState("")
+  const [pwError, setPwError] = useState<string | null>(null)
   const [cepBlocked, setCepBlocked] = useState<string | null>(null)
   const [cepWarning, setCepWarning] = useState<string | null>(null)
   const lastCepLookup = useRef("")
@@ -88,12 +91,19 @@ export function DeliveryForm({ isOpen, onClose, onContinue, planName }: Delivery
   function handleContinue() {
     const found = validateDelivery(data)
     setErrors(found)
-    if (Object.keys(found).length > 0 || cepBlocked) return
-    onContinue(data)
+    let pwProblem: string | null = null
+    if (password.length < 6) pwProblem = "A senha precisa ter pelo menos 6 caracteres."
+    else if (password !== password2) pwProblem = "As duas senhas não são iguais."
+    setPwError(pwProblem)
+    if (Object.keys(found).length > 0 || cepBlocked || pwProblem) return
+    onContinue(data, password)
   }
 
   function handleClose() {
     setData(EMPTY_DELIVERY)
+    setPassword("")
+    setPassword2("")
+    setPwError(null)
     setErrors({})
     setCepBlocked(null)
     setCepWarning(null)
@@ -297,6 +307,43 @@ export function DeliveryForm({ isOpen, onClose, onContinue, planName }: Delivery
                 />
               </Field>
             </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Sua conta no site</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Com o seu CPF e esta senha você acompanha a entrega, troca de plano e cancela quando quiser. Se você já tem conta, a senha que você já usa
+              continua valendo.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Crie uma senha *">
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    setPwError(null)
+                  }}
+                  placeholder="mínimo 6 caracteres"
+                  autoComplete="new-password"
+                  className={pwError ? "border-red-400" : ""}
+                />
+              </Field>
+              <Field label="Repita a senha *">
+                <Input
+                  type="password"
+                  value={password2}
+                  onChange={(e) => {
+                    setPassword2(e.target.value)
+                    setPwError(null)
+                  }}
+                  placeholder="repita a senha"
+                  autoComplete="new-password"
+                  className={pwError ? "border-red-400" : ""}
+                />
+              </Field>
+            </div>
+            {pwError && <p className="text-xs text-red-500 mt-1">{pwError}</p>}
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
