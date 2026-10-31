@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { X, CheckCircle, AlertCircle } from "lucide-react"
-import { createBrowserClient } from "@supabase/ssr"
 
 interface PopupFormProps {
   isOpen: boolean
@@ -29,11 +28,6 @@ export function PopupForm({ isOpen, onClose, type, title, description }: PopupFo
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle")
   const [errorMessage, setErrorMessage] = useState("")
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -41,45 +35,20 @@ export function PopupForm({ isOpen, onClose, type, title, description }: PopupFo
     setErrorMessage("")
 
     try {
-      console.log("[v0] Submitting popup form:", { type, formData })
-
-      // Check if email already exists
-      const { data: existingData, error: checkError } = await supabase
-        .from(type === "waitlist" ? "waitlist" : "region_requests")
-        .select("email")
-        .eq("email", formData.email)
-        .single()
-
-      if (checkError && checkError.code !== "PGRST116") {
-        throw checkError
-      }
-
-      if (existingData) {
-        setErrorMessage("Este email já está cadastrado!")
-        setSubmitStatus("error")
-        return
-      }
-
-      // Insert new record
-      const tableName = type === "waitlist" ? "waitlist" : "region_requests"
-      const insertData =
-        type === "waitlist"
-          ? { name: formData.name, email: formData.email }
-          : { name: formData.name, email: formData.email, region: formData.region }
-
-      const { error: insertError } = await supabase.from(tableName).insert([insertData])
-
-      if (insertError) {
-        if (insertError.code === "23505") {
-          setErrorMessage("Este email já está cadastrado!")
-        } else {
-          throw insertError
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: type === "waitlist" ? "waitlist" : "region", ...formData }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (res.status === 409 || res.status === 400) {
+          setErrorMessage(json.error || "Confira os dados e tente de novo.")
+          setSubmitStatus("error")
+          return
         }
-        setSubmitStatus("error")
-        return
+        throw new Error(json.error || "Falha ao enviar")
       }
-
-      console.log("[v0] Form submitted successfully")
       setSubmitStatus("success")
       setFormData({ name: "", email: "", region: "" })
 

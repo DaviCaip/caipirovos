@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import type React from "react"
 import { useState } from "react"
@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckCircle, Users, Loader2, Check, X } from "lucide-react"
 import Image from "next/image"
-import { createClient } from "@/lib/supabase/client"
 
 interface ProducerForm {
   name: string
@@ -54,35 +53,19 @@ export function ProducerFormSection() {
     }
 
     try {
-      const supabase = createClient()
-
-      const { data: existingProducer } = await supabase.from("producers").select("email").eq("email", producerForm.email).single()
-
-      if (existingProducer) {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "producer", ...producerForm }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.status === 409) {
         setSubmitStatus("error")
-        setSubmitMessage("Este email já está cadastrado. Nossa equipe entrará em contato em breve.")
+        setSubmitMessage(json.error || "Este email já está cadastrado. Nossa equipe entrará em contato em breve.")
         setIsSubmitting(false)
         return
       }
-
-      const { error } = await supabase.from("producers").insert([{
-        name: producerForm.name,
-        email: producerForm.email,
-        phone: producerForm.phone,
-        farm_name: producerForm.farmName,
-        location: producerForm.location,
-        production_capacity: Number.parseInt(producerForm.productionCapacity.split("-")[0]) || 0,
-        experience_years: Number.parseInt(producerForm.experienceYears) || 0,
-        message: producerForm.message,
-      }])
-
-      if (error) throw error
-
-      await fetch("/api/notify-producer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(producerForm),
-      })
+      if (!res.ok) throw new Error(json.error || "Falha ao enviar")
 
       setSubmitStatus("success")
       setSubmitMessage("Excelente! Seu cadastro foi enviado com sucesso. Nossa equipe entrará em contato em até 24 horas.")

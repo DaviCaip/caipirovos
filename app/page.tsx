@@ -4,7 +4,6 @@ import { AboutSection } from "@/components/about-section"
 import { FoundersSection } from "@/components/founders-section"
 import { ResellerFormSection } from "@/components/reseller-form-section"
 import { ProducerFormSection } from "@/components/producer-form-section"
-import { LocationsSection } from "@/components/locations-section"
 import { SubscriptionSection } from "@/components/subscription-section"
 import { Footer } from "@/components/footer"
 
@@ -25,9 +24,7 @@ export default function HomePage() {
       <div id="produtor">
         <ProducerFormSection />
       </div>
-      <div id="onde-encontrar">
-        (deixa em branco)
-      </div>
+      <div id="onde-encontrar" />
       <div id="contato">
         <SubscriptionSection />
       </div>

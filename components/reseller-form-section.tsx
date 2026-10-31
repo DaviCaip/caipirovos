@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import type React from "react"
 import { useState } from "react"
@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckCircle, Store, Loader2, Check, X } from "lucide-react"
 import Image from "next/image"
-import { createClient } from "@/lib/supabase/client"
 
 interface ResellerForm {
   businessName: string
@@ -67,41 +66,19 @@ export function ResellerFormSection() {
     }
 
     try {
-      const supabase = createClient()
-
-      const { data: existingReseller } = await supabase
-        .from("resellers")
-        .select("email")
-        .eq("email", resellerForm.email)
-        .single()
-
-      if (existingReseller) {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "reseller", ...resellerForm }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.status === 409) {
         setSubmitStatus("error")
-        setSubmitMessage("Este email já está cadastrado. Nossa equipe entrará em contato em breve.")
+        setSubmitMessage(json.error || "Este email já está cadastrado. Nossa equipe entrará em contato em breve.")
         setIsSubmitting(false)
         return
       }
-
-      const { error } = await supabase.from("resellers").insert([{
-        business_name: resellerForm.businessName,
-        contact_name: resellerForm.contactName,
-        email: resellerForm.email,
-        phone: resellerForm.phone,
-        business_type: resellerForm.businessType,
-        address: resellerForm.address,
-        city: resellerForm.city,
-        state: resellerForm.state,
-        estimated_monthly_demand: Number.parseInt(resellerForm.estimatedMonthlyDemand.split("-")[0]) || 0,
-        message: resellerForm.message,
-      }])
-
-      if (error) throw error
-
-      await fetch("/api/notify-reseller", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(resellerForm),
-      })
+      if (!res.ok) throw new Error(json.error || "Falha ao enviar")
 
       setSubmitStatus("success")
       setSubmitMessage("Parabéns! Seu cadastro foi enviado com sucesso. Nossa equipe entrará em contato em até 24 horas.")

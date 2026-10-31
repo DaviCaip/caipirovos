@@ -59,3 +59,23 @@ export async function sendOrderNotification(o: OrderNotification) {
     console.error("Falha ao enviar e-mail de notificação:", err)
   }
 }
+
+/** Aviso para o dono quando alguém se cadastra como revendedor ou produtor. Nunca lança erro. */
+export async function sendRegistrationNotification(kind: "reseller" | "producer", d: Record<string, string | number>) {
+  try {
+    if (!process.env.RESEND_API_KEY || !process.env.NOTIFICATION_EMAIL) return
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const row = (label: string, v: unknown) => `<p><strong>${label}:</strong> ${esc(v) || "Não informado"}</p>`
+    const isReseller = kind === "reseller"
+    await resend.emails.send({
+      from: "onboarding@resend.dev",
+      to: process.env.NOTIFICATION_EMAIL,
+      subject: isReseller ? `Novo cadastro de Revendedor - ${d.business_name}` : `Novo cadastro de Produtor - ${d.name}`,
+      html: isReseller
+        ? `<h2>Novo cadastro de Revendedor!</h2>${row("Estabelecimento", d.business_name)}${row("Tipo", d.business_type)}${row("Responsável", d.contact_name)}${row("Telefone", d.phone)}${row("E-mail", d.email)}${row("Cidade", d.city)}${row("Estado", d.state)}${row("Volume mensal", d.estimated_monthly_demand)}${row("Mensagem", d.message)}`
+        : `<h2>Novo cadastro de Produtor!</h2>${row("Nome", d.name)}${row("Propriedade", d.farm_name)}${row("Localização", d.location)}${row("Telefone", d.phone)}${row("E-mail", d.email)}${row("Produção (ovos/dia)", d.production_capacity)}${row("Experiência (anos)", d.experience_years)}${row("Mensagem", d.message)}`,
+    })
+  } catch (err) {
+    console.error("Falha ao enviar e-mail de cadastro:", err)
+  }
+}
