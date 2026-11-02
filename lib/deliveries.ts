@@ -187,6 +187,7 @@ export interface DeliveryView {
   deliveredTo: string | null
   note: string | null
   courierName: string | null
+  courierPhone: string | null
   subscriptionId: string
   customer: {
     name: string
@@ -241,6 +242,14 @@ export async function loadDeliveryViews(supabase: SupabaseClient, opts: { withEv
     for (const s of data || []) subs.set(String(s.id), s)
   }
 
+  // telefone de quem está com a entrega (para a equipe poder ligar)
+  const couriers = new Map<string, string>()
+  const courierIds = Array.from(new Set(rows.map((r: any) => r.courier_id as string | null).filter(Boolean) as string[]))
+  for (const ids of chunk(courierIds, 80)) {
+    const { data } = await supabase.from("admin_accounts").select("id, phone").in("id", ids)
+    for (const c of data || []) if (c.phone) couriers.set(String(c.id), c.phone)
+  }
+
   const events = new Map<string, any[]>()
   if (opts.withEvents) {
     for (const ids of chunk(rows.map((r: any) => r.id as string), 80)) {
@@ -270,6 +279,7 @@ export async function loadDeliveryViews(supabase: SupabaseClient, opts: { withEv
       deliveredTo: d.delivered_to,
       note: d.note,
       courierName: d.courier_name,
+      courierPhone: d.courier_id ? (couriers.get(String(d.courier_id)) ?? null) : null,
       subscriptionId: String(d.subscription_id),
       customer: {
         name: s.customer_name || "Cliente",

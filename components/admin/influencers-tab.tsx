@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { MyStatsTab } from "@/components/admin/my-stats-tab"
+import { formatPhone } from "@/lib/br"
 
 type Api = (path: string, init?: RequestInit) => Promise<any>
 
@@ -14,6 +15,7 @@ interface Account {
   active: boolean
   permissions: string[]
   monthly_goal: number
+  phone?: string | null
   created_at: string
   last_login_at: string | null
   coupons: string[]
@@ -50,6 +52,7 @@ function ago(iso: string | null) {
 
 interface FormValues {
   name: string
+  phone: string
   password: string
   monthlyGoal: string
   permissions: string[]
@@ -105,6 +108,20 @@ function AccountForm({
           </div>
         )}
       </div>
+
+      {role === "courier" && (
+        <div>
+          <label className="text-xs text-muted-foreground">Telefone / WhatsApp do entregador (opcional)</label>
+          <input
+            className={input}
+            inputMode="tel"
+            placeholder="(75) 99999-9999"
+            value={v.phone}
+            onChange={(e) => setV({ ...v, phone: formatPhone(e.target.value) })}
+          />
+          <p className="text-xs text-muted-foreground mt-1">Aparece para a equipe no quadro de Entregas, para ligar se a entrega demorar.</p>
+        </div>
+      )}
 
       {role === "courier" && (
         <p className="text-sm bg-muted/50 rounded-lg p-3">
@@ -214,6 +231,7 @@ export function InfluencersTab({ api }: { api: Api }) {
     try {
       const body: any = {
         name: v.name,
+        phone: v.phone,
         monthlyGoal: v.monthlyGoal,
         permissions: v.permissions,
         couponCodes: v.couponCodes,
@@ -335,7 +353,7 @@ export function InfluencersTab({ api }: { api: Api }) {
             <AccountForm
               key={newRole}
               role={newRole}
-              initial={{ name: "", password: "", monthlyGoal: "10", permissions: [], couponCodes: [], active: true }}
+              initial={{ name: "", phone: "", password: "", monthlyGoal: "10", permissions: [], couponCodes: [], active: true }}
               coupons={coupons}
               editingId={null}
               saving={saving}
@@ -389,6 +407,7 @@ export function InfluencersTab({ api }: { api: Api }) {
                     role={a.role}
                     initial={{
                       name: a.name,
+                      phone: a.phone || "",
                       password: "",
                       monthlyGoal: String(a.monthly_goal),
                       permissions: a.permissions,
@@ -427,6 +446,18 @@ export function InfluencersTab({ api }: { api: Api }) {
                       </>
                     )}
                     <p>🔑 Último acesso: {ago(a.last_login_at)}</p>
+                    {a.role === "courier" && (
+                      <p>
+                        📞{" "}
+                        {a.phone ? (
+                          <a className="underline" href={`tel:${a.phone.replace(/\D/g, "")}`}>
+                            {a.phone}
+                          </a>
+                        ) : (
+                          "telefone não cadastrado"
+                        )}
+                      </p>
+                    )}
                     <p>
                       👁️ Vê também:{" "}
                       {a.role === "courier"

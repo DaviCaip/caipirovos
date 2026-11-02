@@ -7,6 +7,7 @@ import {
   verifyUserPassword,
 } from "@/lib/admin-auth"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { formatPhone, isValidPhone } from "@/lib/br"
 import { loadPurchases } from "@/lib/influencer-stats"
 
 const CODE_RE = /^[A-Z0-9_-]{3,30}$/
@@ -19,6 +20,13 @@ function cleanPermissions(input: unknown): string[] {
 function cleanCodes(input: unknown): string[] {
   const list = Array.isArray(input) ? input : []
   return Array.from(new Set(list.filter((c): c is string => typeof c === "string" && CODE_RE.test(c))))
+}
+
+/** Telefone opcional: "" vira vazio; se vier preenchido tem que ser válido (com DDD). */
+function parsePhone(v: unknown): { ok: true; value: string | null } | { ok: false } {
+  const raw = typeof v === "string" ? v.trim() : ""
+  if (!raw) return { ok: true, value: null }
+  return isValidPhone(raw) ? { ok: true, value: formatPhone(raw) } : { ok: false }
 }
 
 function parseGoal(v: unknown): number | null {
@@ -52,6 +60,7 @@ export async function GET(req: NextRequest) {
       active: a.active,
       permissions: Array.isArray(a.permissions) ? a.permissions : [],
       monthly_goal: a.monthly_goal,
+      phone: a.phone ?? null,
       created_at: a.created_at,
       last_login_at: a.last_login_at,
       coupons: assigned.filter((c) => c.influencer_id === a.id).map((c) => c.code),
@@ -83,6 +92,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Marque pelo menos uma área para a conta de equipe." }, { status: 400 })
   }
 
+  const phone = role === "courier" ? parsePhone(b.phone) : ({ ok: true, value: null } as const)
+  if (!phone.ok) return NextResponse.json({ error: "Telefone do entregador inválido (use o DDD, ex.: (75) 99999-9999)." }, { status: 400 })
+
   if (isEnvPassword(password)) return NextResponse.json({ error: "Essa senha já está em uso. Escolha outra." }, { status: 409 })
   const hash = hashLoginPassword(password)
   if (!hash) return NextResponse.json({ error: "ADMIN_SESSION_SECRET não configurado." }, { status: 500 })
@@ -90,7 +102,7 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
   const { data: created, error } = await supabase
     .from("admin_accounts")
-    .insert({ name, role, login_hash: hash, permissions, monthly_goal: goal ?? 10 })
+    .insert({ name, role, login_hash: hash, permissions, monthly_goal: goal ?? 10, phone: phone.value })
     .select("id")
     .single()
   if (error || !created) {
@@ -133,6 +145,11 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof b.active === "boolean") update.active = b.active
   if (b.permissions !== undefined && !isCourier) update.permissions = cleanPermissions(b.permissions)
+  if (b.phone !== undefined && isCourier) {
+    const phone = parsePhone(b.phone)
+    if (!phone.ok) return NextResponse.json({ error: "Telefone do entregador inválido (use o DDD, ex.: (75) 99999-9999)." }, { status: 400 })
+    update.phone = phone.value
+  }
   if (b.monthlyGoal !== undefined) {
     const goal = parseGoal(b.monthlyGoal)
     if (goal === null || Number.isNaN(goal)) return NextResponse.json({ error: "Meta inválida." }, { status: 400 })

@@ -72,3 +72,29 @@ export function whatsappMessage(status: DeliveryStatus, fullName: string): strin
   if (status === "failed") return `Olá, ${first}! Aqui é do Caipirovos 🥚 Tentei entregar o seu pedido e não consegui. Qual o melhor horário para eu voltar?`
   return `Olá, ${first}! Aqui é do Caipirovos 🥚 Vou fazer a entrega do seu pedido. Posso passar hoje?`
 }
+
+// ---------- prazo em rota ----------
+/** Depois que o entregador sai para entregar, a entrega tem este prazo (em horas). Passou disso, fica em alerta vermelho. */
+export const OUT_LIMIT_HOURS = 24
+
+export function hoursSince(iso: string | null | undefined, nowMs: number = Date.now()): number | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  return Number.isFinite(t) ? (nowMs - t) / 3600000 : null
+}
+
+/** Está "Em rota" há mais de 24h? */
+export function isOutOverdue(d: { status: string; outAt: string | null }, nowMs: number = Date.now()): boolean {
+  if (d.status !== "out") return false
+  const h = hoursSince(d.outAt, nowMs)
+  return h !== null && h > OUT_LIMIT_HOURS
+}
+
+/** 45 min, 2h30, 26h */
+export function formatElapsed(hours: number): string {
+  const total = Math.max(1, Math.round(hours * 60))
+  if (total < 60) return `${total} min`
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return m > 0 && h < 10 ? `${h}h${String(m).padStart(2, "0")}` : `${h}h`
+}

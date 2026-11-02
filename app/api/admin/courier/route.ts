@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const today = dayKey()
   const views = await loadDeliveryViews(createAdminClient(), { withEvents: false })
   const deliveries = views.filter((d) => isOpen(d.status) || (d.status === "delivered" && d.deliveredAt && dayKey(d.deliveredAt) === today))
-  return NextResponse.json({ deliveries, today, me: { id: auth.user.id ?? null, name: auth.user.name } })
+  return NextResponse.json({ deliveries: deliveries.map(({ courierPhone, ...d }) => d), today, me: { id: auth.user.id ?? null, name: auth.user.name } })
 }
 
 export async function PATCH(req: NextRequest) {

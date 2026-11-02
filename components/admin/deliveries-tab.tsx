@@ -9,7 +9,11 @@ import {
   FAIL_REASONS,
   MANAGER_TRANSITIONS,
   STATUS_INFO,
+  OUT_LIMIT_HOURS,
+  formatElapsed,
+  hoursSince,
   isOpen,
+  isOutOverdue,
   mapsUrl,
   whatsappMessage,
   whatsappUrl,
@@ -24,7 +28,7 @@ interface SubOption {
   neighborhood: string
 }
 
-type StatusFilter = "pending" | DeliveryStatus | "all"
+type StatusFilter = "pending" | "overdue" | DeliveryStatus | "all"
 type DateFilter = "all" | "today" | "late" | "week"
 
 const ACTION_LABEL: Record<DeliveryStatus, (from: DeliveryStatus) => string> = {
@@ -40,6 +44,7 @@ export function DeliveriesTab({ api }: { api: Api }) {
   const [items, setItems] = useState<DeliveryView[]>([])
   const [subs, setSubs] = useState<SubOption[]>([])
   const [today, setToday] = useState(dayKey())
+  const [now, setNow] = useState(Date.now())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -78,19 +83,38 @@ export function DeliveriesTab({ api }: { api: Api }) {
     load()
   }, [load])
 
+  // o relógio das 24h anda sozinho: atualiza a tela a cada minuto (e os dados a cada 5 minutos)
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60000)
+    const refresh = setInterval(load, 300000)
+    return () => {
+      clearInterval(tick)
+      clearInterval(refresh)
+    }
+  }, [load])
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { pending: 0, all: items.length }
+    const c: Record<string, number> = { pending: 0, overdue: 0, all: items.length }
     for (const d of items) {
       c[d.status] = (c[d.status] || 0) + 1
       if (isOpen(d.status)) c.pending++
+      if (isOutOverdue(d, now)) c.overdue++
     }
     return c
-  }, [items])
+  }, [items, now])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items
-      .filter((d) => (statusFilter === "all" ? true : statusFilter === "pending" ? isOpen(d.status) : d.status === statusFilter))
+      .filter((d) =>
+        statusFilter === "all"
+          ? true
+          : statusFilter === "pending"
+            ? isOpen(d.status)
+            : statusFilter === "overdue"
+              ? isOutOverdue(d, now)
+              : d.status === statusFilter
+      )
       .filter((d) => {
         if (dateFilter === "all") return true
         const diff = diffDays(d.dueDate, today)
@@ -104,7 +128,7 @@ export function DeliveriesTab({ api }: { api: Api }) {
           `${d.customer.name} ${d.customer.neighborhood} ${d.customer.street} ${d.customer.plan}`.toLowerCase().includes(q)
       )
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.customer.neighborhood.localeCompare(b.customer.neighborhood))
-  }, [items, statusFilter, dateFilter, search, today])
+  }, [items, statusFilter, dateFilter, search, today, now])
 
   async function send(ids: string[], to: DeliveryStatus, extra: Record<string, string> = {}) {
     setSaving(true)
@@ -178,6 +202,7 @@ export function DeliveriesTab({ api }: { api: Api }) {
     ["accepted", "Aceitas"],
     ["preparing", "Em preparo"],
     ["out", "Em rota"],
+    ["overdue", `⏰ Passou de ${OUT_LIMIT_HOURS}h`],
     ["failed", "Não entregues"],
     ["delivered", "Entregues"],
     ["canceled", "Canceladas"],
@@ -231,6 +256,17 @@ export function DeliveriesTab({ api }: { api: Api }) {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {counts.overdue > 0 && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm font-semibold text-red-800">
+            ⏰ {counts.overdue} entrega{counts.overdue !== 1 ? "s" : ""} em rota há mais de {OUT_LIMIT_HOURS}h. Vale ligar para o entregador.
+          </p>
+          <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setStatusFilter("overdue")}>
+            Ver agora
+          </Button>
+        </div>
       )}
 
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
@@ -297,8 +333,10 @@ export function DeliveriesTab({ api }: { api: Api }) {
           const info = STATUS_INFO[d.status]
           const due = dueLabel(d.dueDate, today)
           const wa = whatsappUrl(c.phone, whatsappMessage(d.status, c.name))
+          const overdue = isOutOverdue(d, now)
+          const outHours = d.status === "out" ? hoursSince(d.outAt, now) : null
           return (
-            <Card key={d.id} className="border-l-4" style={{ borderLeftColor: d.status === "out" ? "#a855f7" : d.status === "delivered" ? "#22c55e" : d.status === "failed" ? "#ef4444" : d.status === "canceled" ? "#9ca3af" : due.late && isOpen(d.status) ? "#ef4444" : "#facc15" }}>
+            <Card key={d.id} className={`border-l-4 ${overdue ? "bg-red-50 ring-2 ring-red-300" : ""}`} style={{ borderLeftColor: overdue ? "#dc2626" : d.status === "out" ? "#a855f7" : d.status === "delivered" ? "#22c55e" : d.status === "failed" ? "#ef4444" : d.status === "canceled" ? "#9ca3af" : due.late && isOpen(d.status) ? "#ef4444" : "#facc15" }}>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start gap-3">
                   {isOpen(d.status) && (
@@ -337,7 +375,20 @@ export function DeliveriesTab({ api }: { api: Api }) {
                       )}
                       {c.instructions && <p>📝 {c.instructions}</p>}
                       {d.note && <p>💬 {d.note}</p>}
-                      {d.courierName && <p>🚚 Entregador: {d.courierName}</p>}
+                      {d.courierName && (
+                        <p>
+                          🚚 Entregador: {d.courierName}
+                          {d.courierPhone && (
+                            <>
+                              {" · "}
+                              <a className="underline" href={`tel:${d.courierPhone.replace(/\D/g, "")}`}>
+                                📞 {d.courierPhone}
+                              </a>
+                            </>
+                          )}
+                        </p>
+                      )}
+                      {outHours !== null && !overdue && <p>⏱️ Em rota há {formatElapsed(outHours)}</p>}
                       {d.status === "failed" && d.failedReason && <p className="text-red-700">⚠️ {d.failedReason}</p>}
                       {d.status === "delivered" && d.deliveredAt && (
                         <p className="text-green-700">
@@ -348,6 +399,13 @@ export function DeliveriesTab({ api }: { api: Api }) {
                     </div>
                   </div>
                 </div>
+
+                {overdue && outHours !== null && (
+                  <p className="text-sm font-semibold text-red-700 bg-red-100 border border-red-300 rounded-lg p-3">
+                    ⏰ Saiu para entrega há {formatElapsed(outHours)}: passou de {OUT_LIMIT_HOURS}h.{" "}
+                    {d.courierPhone ? "Ligue para o entregador para saber o que houve." : "Fale com o entregador para saber o que houve."}
+                  </p>
+                )}
 
                 <div className="flex gap-2 flex-wrap">
                   {MANAGER_TRANSITIONS[d.status].map((to) => (

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { DeliveryView } from "@/lib/deliveries"
 import { dayKey, dueLabel } from "@/lib/dates"
-import { FAIL_REASONS, STATUS_INFO, mapsUrl, whatsappMessage, whatsappUrl } from "@/lib/delivery-status"
+import { FAIL_REASONS, OUT_LIMIT_HOURS, STATUS_INFO, formatElapsed, hoursSince, isOutOverdue, mapsUrl, whatsappMessage, whatsappUrl } from "@/lib/delivery-status"
 
 type Phase = "checking" | "login" | "noaccess" | "app"
 type Sheet = { kind: "delivered" | "failed"; d: DeliveryView } | null
@@ -17,6 +17,7 @@ export default function CourierPage() {
 
   const [deliveries, setDeliveries] = useState<DeliveryView[]>([])
   const [today, setToday] = useState(dayKey())
+  const [now, setNow] = useState(Date.now())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState<"todo" | "done">("todo")
@@ -67,7 +68,10 @@ export default function CourierPage() {
   useEffect(() => {
     if (phase !== "app") return
     load()
-    const t = setInterval(load, 60000)
+    const t = setInterval(() => {
+      setNow(Date.now())
+      load()
+    }, 60000)
     const onVisible = () => document.visibilityState === "visible" && load()
     document.addEventListener("visibilitychange", onVisible)
     return () => {
@@ -139,6 +143,7 @@ export default function CourierPage() {
   )
   const done = useMemo(() => deliveries.filter((d) => d.status === "delivered"), [deliveries])
   const onRoute = todo.filter((d) => d.status === "out").length
+  const overdueCount = todo.filter((d) => isOutOverdue(d, now)).length
   const list = tab === "todo" ? todo : done
 
   // ---------- telas ----------
@@ -222,6 +227,11 @@ export default function CourierPage() {
           ))}
         </div>
         {tab === "todo" && onRoute > 0 && <p className="text-xs mt-2 text-black/70">🚚 {onRoute} em rota agora</p>}
+        {tab === "todo" && overdueCount > 0 && (
+          <p className="text-xs mt-2 font-bold text-red-700 bg-red-100 rounded-lg px-2 py-1">
+            ⏰ {overdueCount} entrega{overdueCount !== 1 ? "s" : ""} passou de {OUT_LIMIT_HOURS}h em rota
+          </p>
+        )}
       </header>
 
       <main className="p-4 space-y-4">
@@ -240,8 +250,10 @@ export default function CourierPage() {
           const due = dueLabel(d.dueDate, today)
           const wa = whatsappUrl(c.phone, whatsappMessage(d.status, c.name))
           const isBusy = busy === d.id
+          const overdue = isOutOverdue(d, now)
+          const outHours = d.status === "out" ? hoursSince(d.outAt, now) : null
           return (
-            <article key={d.id} className={`bg-white rounded-2xl shadow p-4 space-y-3 border-l-4 ${d.status === "out" ? "border-l-purple-500" : d.status === "delivered" ? "border-l-green-500" : due.late ? "border-l-red-500" : "border-l-yellow-400"}`}>
+            <article key={d.id} className={`${overdue ? "bg-red-50 ring-2 ring-red-400" : "bg-white"} rounded-2xl shadow p-4 space-y-3 border-l-4 ${overdue ? "border-l-red-600" : d.status === "out" ? "border-l-purple-500" : d.status === "delivered" ? "border-l-green-500" : due.late ? "border-l-red-500" : "border-l-yellow-400"}`}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${info.badge}`}>
                   {info.emoji} {info.label}
@@ -279,6 +291,12 @@ export default function CourierPage() {
                 <p className="text-sm bg-amber-50 border border-amber-200 rounded-xl p-3">📝 {c.instructions}</p>
               )}
               {d.note && <p className="text-sm bg-blue-50 border border-blue-200 rounded-xl p-3">💬 {d.note}</p>}
+              {overdue && outHours !== null && (
+                <p className="text-sm font-bold text-red-700 bg-red-100 border border-red-300 rounded-xl p-3">
+                  ⏰ Você saiu há {formatElapsed(outHours)}. Passou de {OUT_LIMIT_HOURS}h: conclua a entrega ou toque em “Não consegui” para avisar a equipe.
+                </p>
+              )}
+              {!overdue && outHours !== null && <p className="text-xs text-muted-foreground">⏱️ Em rota há {formatElapsed(outHours)}</p>}
               {d.status === "failed" && d.failedReason && (
                 <p className="text-sm bg-red-50 border border-red-200 rounded-xl p-3">⚠️ Última tentativa: {d.failedReason}</p>
               )}
