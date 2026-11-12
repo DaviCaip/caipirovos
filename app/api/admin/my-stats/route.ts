@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/admin-auth"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { loadPurchases } from "@/lib/influencer-stats"
+import { loadLevels, loadPurchases } from "@/lib/influencer-stats"
 
 // Resultados dos cupons de UMA conta de influencer.
 // - Influencer: só enxerga os próprios (o parâmetro ?account é ignorado).
@@ -33,7 +33,10 @@ export async function GET(req: NextRequest) {
 
   const purchases = await loadPurchases((coupons || []).map((c) => c.code))
 
+  const { levels } = await loadLevels()
+
   return NextResponse.json({
+    levels,
     account: { id: account.id, name: account.name, monthlyGoal: account.monthly_goal },
     coupons: coupons || [],
     purchases,

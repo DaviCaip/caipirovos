@@ -8,7 +8,8 @@ import {
 } from "@/lib/admin-auth"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { formatPhone, isValidPhone } from "@/lib/br"
-import { loadPurchases } from "@/lib/influencer-stats"
+import { loadLevels, loadPurchases } from "@/lib/influencer-stats"
+import { levelFor } from "@/lib/influencer-levels"
 
 const CODE_RE = /^[A-Z0-9_-]{3,30}$/
 
@@ -49,11 +50,16 @@ export async function GET(req: NextRequest) {
   const owner: Record<string, string> = {}
   for (const c of assigned) owner[c.code] = c.influencer_id
 
+  const { levels } = await loadLevels()
   const since30 = Date.now() - 30 * 86400000
   const result = (accounts || []).map((a) => {
     const mine = purchases.filter((p) => owner[p.code] === a.id)
     const last = mine.reduce<string | null>((acc, p) => (!acc || p.at > acc ? p.at : acc), null)
+    const lv = levelFor(mine.length, levels)
     return {
+      levelName: lv.level.name,
+      levelEmoji: lv.level.emoji,
+      percent: lv.level.percent,
       id: a.id,
       name: a.name,
       role: a.role === "team" ? "team" : a.role === "courier" ? "courier" : "influencer",

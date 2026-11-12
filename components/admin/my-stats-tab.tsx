@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { formatBRL } from "@/lib/plans"
+import { DEFAULT_LEVELS, formatPercent, levelFor, type Level } from "@/lib/influencer-levels"
 
 type Api = (path: string, init?: RequestInit) => Promise<any>
 
@@ -25,6 +26,7 @@ interface CouponInfo {
   used_count: number
 }
 interface Payload {
+  levels?: Level[]
   account: { id: string; name: string; monthlyGoal: number }
   coupons: CouponInfo[]
   purchases: Purchase[]
@@ -35,16 +37,6 @@ const TZ = "America/Bahia"
 const DAY = 86400000
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 const WEEKDAYS_LONG = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
-
-// Níveis com a cara do Caipirovos: quanto mais compras com o cupom, mais o bichinho cresce.
-const LEVELS = [
-  { min: 0, name: "Ovo chocando", emoji: "🥚" },
-  { min: 1, name: "Pintinho", emoji: "🐣" },
-  { min: 5, name: "Franguinho", emoji: "🐥" },
-  { min: 15, name: "Galinha caipira", emoji: "🐔" },
-  { min: 30, name: "Galo garnisé", emoji: "🐓" },
-  { min: 60, name: "Rei do terreiro", emoji: "👑" },
-]
 
 // ---------- datas (sempre no horário da Bahia) ----------
 const dayKey = (d: string | number | Date) => new Date(d).toLocaleDateString("sv-SE", { timeZone: TZ }) // AAAA-MM-DD
@@ -82,6 +74,14 @@ function useCountUp(target: number, ms = 900) {
 function BigNumber({ value, money }: { value: number; money?: boolean }) {
   const v = useCountUp(value)
   return <>{money ? formatBRL(v) : v.toLocaleString("pt-BR")}</>
+}
+
+/** "1 cupom vendido" / "13 cupons vendidos" */
+const cuponsVendidos = (n: number) => `${n} ${n === 1 ? "cupom vendido" : "cupons vendidos"}`
+
+function PercentNumber({ value }: { value: number }) {
+  const v = useCountUp(Math.round(value * 10)) / 10
+  return <>{formatPercent(v)}</>
 }
 
 function describeCoupon(c: CouponInfo) {
@@ -176,7 +176,9 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
     const monthKey = today.slice(0, 7)
     const thisMonth = all.filter((p) => dayKey(p.at).slice(0, 7) === monthKey).length
     const total = all.length
-    const levelIdx = LEVELS.reduce((acc, l, i) => (total >= l.min ? i : acc), 0)
+    // escada de níveis e % de ganho (configurada pelo Davi; a padrão vale se ninguém mexeu)
+    const levels = data.levels && data.levels.length > 1 ? data.levels : DEFAULT_LEVELS
+    const levelIdx = levelFor(total, levels).index
 
     return {
       nowMs,
@@ -193,8 +195,8 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
       thisMonth,
       total,
       levelIdx,
+      levels,
       eggs: inRange.reduce((s, p) => s + p.eggs, 0),
-      saved: inRange.reduce((s, p) => s + p.discountCents, 0),
       last: all[0]?.at ?? null,
       feed: [...all].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 8),
     }
@@ -212,8 +214,8 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
   if (!data || !stats) return <p className="text-center text-muted-foreground py-10">Carregando seus resultados...</p>
 
   const { account, coupons } = data
-  const level = LEVELS[stats.levelIdx]
-  const next = LEVELS[stats.levelIdx + 1]
+  const level = stats.levels[stats.levelIdx]
+  const next = stats.levels[stats.levelIdx + 1]
   const levelProgress = next ? ((stats.total - level.min) / (next.min - level.min)) * 100 : 100
   const goal = account.monthlyGoal
   const goalPct = goal > 0 ? Math.min(100, (stats.thisMonth / goal) * 100) : 0
@@ -270,12 +272,17 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
             <p className="text-sm text-muted-foreground">🥚 ovos que você ajudou a entregar</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-2 border-green-200">
           <CardContent className="p-5">
             <p className="text-3xl font-bold text-green-700">
-              <BigNumber value={stats.saved} money />
+              <PercentNumber value={level.percent} />
             </p>
-            <p className="text-sm text-muted-foreground">💚 que seus seguidores economizaram</p>
+            <p className="text-sm text-muted-foreground">💰 porcentagem de ganho</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {next
+                ? `Faltam ${cuponsVendidos(next.min - stats.total)} para ${formatPercent(next.percent)}`
+                : "Nível máximo! 🏆"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -294,10 +301,11 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
           <CardContent className="p-5 space-y-3">
             <div className="flex items-center gap-3">
               <div className="text-5xl">{level.emoji}</div>
-              <div>
+              <div className="flex-1">
                 <p className="text-xs text-muted-foreground">Seu nível</p>
                 <p className="text-xl font-bold">{level.name}</p>
               </div>
+              <span className="text-sm font-bold bg-green-100 text-green-800 rounded-full px-3 py-1">{formatPercent(level.percent)} de ganho</span>
             </div>
             <div className="h-3 rounded-full bg-muted overflow-hidden">
               <div
@@ -307,20 +315,26 @@ export function MyStatsTab({ api, accountId }: { api: Api; accountId?: string })
             </div>
             <p className="text-sm text-muted-foreground">
               {next
-                ? `Faltam ${next.min - stats.total} compra${next.min - stats.total !== 1 ? "s" : ""} para virar ${next.emoji} ${next.name}`
-                : "Você chegou ao topo do terreiro! 👑"}
+                ? `Faltam ${cuponsVendidos(next.min - stats.total)} para virar ${next.emoji} ${next.name} e ganhar ${formatPercent(next.percent)}`
+                : `Você chegou ao nível máximo: ${formatPercent(level.percent)} de ganho! 👑`}
             </p>
-            <div className="flex gap-1 flex-wrap pt-1">
-              {LEVELS.map((l, i) => (
-                <span
-                  key={l.name}
-                  title={`${l.name} (${l.min}+ compras)`}
-                  className={`text-xl px-1.5 rounded-lg ${i <= stats.levelIdx ? "" : "opacity-25 grayscale"}`}
+            <ul className="space-y-1 pt-1 text-sm">
+              {stats.levels.map((l, i) => (
+                <li
+                  key={`${l.min}-${l.name}`}
+                  className={`flex items-center justify-between rounded-lg px-2 py-1 ${
+                    i === stats.levelIdx ? "bg-green-50 border border-green-200 font-semibold" : i < stats.levelIdx ? "opacity-70" : "text-muted-foreground"
+                  }`}
                 >
-                  {l.emoji}
-                </span>
+                  <span>
+                    {l.emoji} {l.name}
+                  </span>
+                  <span className="text-xs">
+                    {l.min === 0 ? "início" : `${l.min}+ cupons`} · {formatPercent(l.percent)}
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
           </CardContent>
         </Card>
 

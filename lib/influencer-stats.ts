@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getPlanByName } from "@/lib/plans"
+import { DEFAULT_LEVELS, LEVELS_KEY, normalizeLevels, type Level } from "@/lib/influencer-levels"
 
 // Uma "compra de verdade" com cupom:
 //  - cartão: a assinatura só existe no banco depois que o pagamento foi concluído;
@@ -32,4 +33,11 @@ export async function loadPurchases(codes: string[]): Promise<Purchase[]> {
       code: r.coupon_code,
       discountCents: Number(r.discount_cents || 0),
     }))
+}
+
+/** Escada de níveis configurada no painel (ou a padrão, se ninguém mexeu). */
+export async function loadLevels(): Promise<{ levels: Level[]; isDefault: boolean }> {
+  const { data } = await createAdminClient().from("site_settings").select("value").eq("key", LEVELS_KEY).maybeSingle()
+  const r = normalizeLevels((data?.value as any)?.levels)
+  return r.ok ? { levels: r.levels, isDefault: false } : { levels: DEFAULT_LEVELS, isDefault: true }
 }

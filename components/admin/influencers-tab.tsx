@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { MyStatsTab } from "@/components/admin/my-stats-tab"
 import { formatPhone } from "@/lib/br"
+import { formatPercent, type Level } from "@/lib/influencer-levels"
 
 type Api = (path: string, init?: RequestInit) => Promise<any>
 
@@ -16,6 +17,9 @@ interface Account {
   permissions: string[]
   monthly_goal: number
   phone?: string | null
+  levelName?: string
+  levelEmoji?: string
+  percent?: number
   created_at: string
   last_login_at: string | null
   coupons: string[]
@@ -58,6 +62,142 @@ interface FormValues {
   permissions: string[]
   couponCodes: string[]
   active: boolean
+}
+
+type LevelRow = { min: string; name: string; emoji: string; percent: string }
+
+/** Escada de níveis e % de ganho: o Davi (e a chefe) ajustam aqui, sem mexer no site. */
+function LevelsEditor({ api, onSaved }: { api: Api; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<LevelRow[]>([])
+  const [isDefault, setIsDefault] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const input = "w-full border rounded-lg px-2 py-1.5 text-sm"
+
+  const toRows = (levels: Level[]): LevelRow[] => levels.map((l) => ({ min: String(l.min), name: l.name, emoji: l.emoji, percent: String(l.percent) }))
+
+  async function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && !loaded) {
+      try {
+        const j = await api("/api/admin/influencer-levels")
+        setRows(toRows(j.levels))
+        setIsDefault(!!j.isDefault)
+        setLoaded(true)
+      } catch (e: any) {
+        setError(e.message)
+      }
+    }
+  }
+
+  const upd = (i: number, patch: Partial<LevelRow>) => setRows((rs) => rs.map((r, k) => (k === i ? { ...r, ...patch } : r)))
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    setMsg(null)
+    try {
+      const j = await api("/api/admin/influencer-levels", {
+        method: "PUT",
+        body: JSON.stringify({ levels: rows.map((r) => ({ min: Number(r.min), name: r.name, emoji: r.emoji, percent: Number(String(r.percent).replace(",", ".")) })) }),
+      })
+      setRows(toRows(j.levels))
+      setIsDefault(false)
+      setMsg("Níveis salvos! Os influencers já veem a nova escada.")
+      onSaved()
+    } catch (e: any) {
+      setError(e.message)
+    }
+    setSaving(false)
+  }
+
+  async function reset() {
+    setSaving(true)
+    setError(null)
+    setMsg(null)
+    try {
+      const j = await api("/api/admin/influencer-levels", { method: "PUT", body: JSON.stringify({ reset: true }) })
+      setRows(toRows(j.levels))
+      setIsDefault(true)
+      setMsg("Voltou para a escada padrão.")
+      onSaved()
+    } catch (e: any) {
+      setError(e.message)
+    }
+    setSaving(false)
+  }
+
+  const last = rows[rows.length - 1]
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <button className="w-full flex items-center justify-between gap-3 text-left" onClick={toggle}>
+          <span>
+            <span className="font-semibold">🏅 Níveis e % de ganho dos influencers</span>
+            {last && <span className="block text-xs text-muted-foreground">Nível máximo: a partir de {last.min} cupons vendidos = {last.percent}% de ganho</span>}
+          </span>
+          <span className="text-sm text-muted-foreground">{open ? "fechar" : "editar"}</span>
+        </button>
+
+        {open && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Quanto mais cupons vendidos (compras pagas com o cupom, no total), mais alto o nível e a porcentagem. Cada influencer vê a escada e a própria
+              porcentagem no painel dele. {isDefault && "Hoje está valendo a escada padrão."}
+            </p>
+            <div className="hidden md:grid grid-cols-12 gap-2 text-xs text-muted-foreground px-1">
+              <span className="col-span-2">A partir de (cupons)</span>
+              <span className="col-span-1">Ícone</span>
+              <span className="col-span-5">Nome do nível</span>
+              <span className="col-span-2">% de ganho</span>
+              <span className="col-span-2" />
+            </div>
+            {rows.map((r, i) => (
+              <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                <input className={`${input} col-span-4 md:col-span-2`} type="number" min={0} value={r.min} disabled={i === 0} onChange={(e) => upd(i, { min: e.target.value })} aria-label="A partir de quantos cupons" />
+                <input className={`${input} col-span-2 md:col-span-1 text-center`} value={r.emoji} maxLength={8} onChange={(e) => upd(i, { emoji: e.target.value })} aria-label="Ícone" />
+                <input className={`${input} col-span-6 md:col-span-5`} value={r.name} maxLength={30} onChange={(e) => upd(i, { name: e.target.value })} aria-label="Nome do nível" />
+                <input className={`${input} col-span-6 md:col-span-2`} type="number" min={0} max={100} step={0.5} value={r.percent} onChange={(e) => upd(i, { percent: e.target.value })} aria-label="Porcentagem de ganho" />
+                <div className="col-span-6 md:col-span-2 text-right">
+                  {i > 0 && rows.length > 2 && (
+                    <button className="text-xs text-red-600 underline" onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}>
+                      Remover
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
+            {msg && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">{msg}</p>}
+            <div className="flex gap-2 flex-wrap">
+              {rows.length < 10 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const l = rows[rows.length - 1]
+                    setRows((rs) => [...rs, { min: String(Number(l?.min || 0) + 10), name: "Novo nível", emoji: "⭐", percent: String(l?.percent || 0) }])
+                  }}
+                >
+                  ➕ Adicionar nível
+                </Button>
+              )}
+              <Button size="sm" disabled={saving} onClick={save}>
+                {saving ? "Salvando..." : "Salvar níveis"}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={saving || isDefault} onClick={reset}>
+                Voltar ao padrão
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 function AccountForm({
@@ -329,6 +469,8 @@ export function InfluencersTab({ api }: { api: Api }) {
 
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
 
+      {mode === "list" && <LevelsEditor api={api} onSaved={load} />}
+
       {mode === "new" && (
         <Card>
           <CardContent className="p-5">
@@ -443,6 +585,11 @@ export function InfluencersTab({ api }: { api: Api }) {
                         <p>
                           🛒 {a.total} compra{a.total !== 1 ? "s" : ""} no total · {a.last30} nos últimos 30 dias
                         </p>
+                        {a.levelName && (
+                          <p>
+                            🏅 Nível {a.levelEmoji} {a.levelName} · <strong>{formatPercent(a.percent ?? 0)} de ganho</strong>
+                          </p>
+                        )}
                       </>
                     )}
                     <p>🔑 Último acesso: {ago(a.last_login_at)}</p>
